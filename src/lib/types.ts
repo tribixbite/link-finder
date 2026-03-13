@@ -19,7 +19,9 @@ export interface DomainResult extends DomainCandidate {
 	/** DNS records found (empty = no records) */
 	records: string[];
 	/** Availability status */
-	status: 'available' | 'taken' | 'error' | 'checking';
+	status: 'available' | 'taken' | 'reserved' | 'error' | 'checking';
+	/** How the status was determined */
+	method?: 'dig' | 'whois';
 	/** Error message if status is 'error' */
 	error?: string;
 	/** Timestamp of check */
@@ -71,7 +73,7 @@ export const DEFAULT_MUTATIONS = new Set<MutationType>(['original', 'dropLastVow
 
 /** Filter state for results */
 export interface Filters {
-	status: 'all' | 'available' | 'taken';
+	status: 'all' | 'available' | 'taken' | 'reserved';
 	tlds: Set<string>;
 	mutations: Set<MutationType>;
 	lengthMin: number;

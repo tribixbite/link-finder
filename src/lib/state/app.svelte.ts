@@ -59,8 +59,12 @@ class AppState {
 		let items = [...this.results.values()];
 
 		// Status filter
-		if (this.filters.status !== 'all') {
-			items = items.filter((r) => r.status === this.filters.status);
+		if (this.filters.status === 'available') {
+			items = items.filter((r) => r.status === 'available');
+		} else if (this.filters.status === 'taken') {
+			items = items.filter((r) => r.status === 'taken');
+		} else if (this.filters.status === 'reserved') {
+			items = items.filter((r) => r.status === 'reserved');
 		}
 
 		// TLD filter
@@ -106,7 +110,7 @@ class AppState {
 					cmp = a.mutation.localeCompare(b.mutation) || a.name.localeCompare(b.name);
 					break;
 				case 'status': {
-					const order = { available: 0, checking: 1, error: 2, taken: 3 };
+					const order: Record<string, number> = { available: 0, checking: 1, error: 2, reserved: 3, taken: 4 };
 					cmp = order[a.status] - order[b.status] || a.domain.localeCompare(b.domain);
 					break;
 				}
@@ -129,11 +133,20 @@ class AppState {
 		return count;
 	}
 
-	/** Count of taken results (unfiltered) */
+	/** Count of taken results (unfiltered, excludes reserved) */
 	get takenCount(): number {
 		let count = 0;
 		for (const r of this.results.values()) {
 			if (r.status === 'taken') count++;
+		}
+		return count;
+	}
+
+	/** Count of reserved results (unfiltered) */
+	get reservedCount(): number {
+		let count = 0;
+		for (const r of this.results.values()) {
+			if (r.status === 'reserved') count++;
 		}
 		return count;
 	}

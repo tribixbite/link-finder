@@ -8,16 +8,18 @@
 
 	let { result }: Props = $props();
 
-	const statusColors = {
+	const statusColors: Record<string, string> = {
 		available: 'var(--available)',
 		taken: 'var(--taken)',
+		reserved: 'var(--warning)',
 		checking: 'var(--accent)',
 		error: 'var(--warning)',
 	};
 
-	const statusIcons = {
+	const statusIcons: Record<string, string> = {
 		available: '\u2713',
 		taken: '\u2717',
+		reserved: '\u229B', // circled asterisk
 		checking: '\u2022',
 		error: '!',
 	};
