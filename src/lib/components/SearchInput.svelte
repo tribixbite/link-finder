@@ -1,0 +1,133 @@
+<script lang="ts">
+	import { app } from '$lib/state/app.svelte';
+	import { TLDS, MUTATION_INFO } from '$lib/types';
+	import type { MutationType } from '$lib/types';
+
+	const allMutations = Object.keys(MUTATION_INFO) as MutationType[];
+
+	function handleKeydown(e: KeyboardEvent) {
+		// Ctrl/Cmd+Enter to search
+		if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+			e.preventDefault();
+			app.search();
+		}
+	}
+</script>
+
+<div class="space-y-4 p-4 rounded-xl" style="background: var(--bg-secondary); border: 1px solid var(--border);">
+	<!-- Terms input -->
+	<div>
+		<label class="block text-sm font-medium mb-1.5" style="color: var(--text-secondary);" for="search-terms">
+			Search terms
+			<span class="text-xs font-normal" style="color: var(--text-muted);">
+				(comma or newline separated)
+			</span>
+		</label>
+		<textarea
+			id="search-terms"
+			bind:value={app.termsInput}
+			onkeydown={handleKeydown}
+			placeholder="torch&#10;sift&#10;beacon&#10;grep"
+			rows="4"
+			class="w-full px-3 py-2 rounded-lg text-sm resize-y border-0"
+			style="background: var(--bg-tertiary); color: var(--text-primary); font-family: ui-monospace, monospace; outline: none;"
+		></textarea>
+	</div>
+
+	<!-- TLD selector -->
+	<div>
+		<div class="flex items-center justify-between mb-1.5">
+			<span class="text-sm font-medium" style="color: var(--text-secondary);">TLDs</span>
+			<div class="flex gap-1">
+				<button
+					onclick={() => { app.selectedTlds = new Set(TLDS); }}
+					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
+					style="background: var(--bg-tertiary); color: var(--text-muted);"
+				>all</button>
+				<button
+					onclick={() => { app.selectedTlds = new Set(); }}
+					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
+					style="background: var(--bg-tertiary); color: var(--text-muted);"
+				>none</button>
+			</div>
+		</div>
+		<div class="flex flex-wrap gap-1.5">
+			{#each TLDS as tld}
+				<button
+					onclick={() => app.toggleTld(tld)}
+					class="chip"
+					class:active={app.selectedTlds.has(tld)}
+				>{tld}</button>
+			{/each}
+		</div>
+	</div>
+
+	<!-- Mutation selector -->
+	<div>
+		<div class="flex items-center justify-between mb-1.5">
+			<span class="text-sm font-medium" style="color: var(--text-secondary);">Mutations</span>
+			<div class="flex gap-1">
+				<button
+					onclick={() => { app.selectedMutations = new Set(allMutations); }}
+					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
+					style="background: var(--bg-tertiary); color: var(--text-muted);"
+				>all</button>
+				<button
+					onclick={() => { app.selectedMutations = new Set(['original']); }}
+					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
+					style="background: var(--bg-tertiary); color: var(--text-muted);"
+				>reset</button>
+			</div>
+		</div>
+		<div class="flex flex-wrap gap-1.5">
+			{#each allMutations as m}
+				<button
+					onclick={() => app.toggleMutation(m)}
+					class="chip"
+					class:active={app.selectedMutations.has(m)}
+					title="{MUTATION_INFO[m].description} — {MUTATION_INFO[m].example}"
+				>{MUTATION_INFO[m].label}</button>
+			{/each}
+		</div>
+	</div>
+
+	<!-- Search button + candidate count -->
+	<div class="flex items-center gap-3">
+		{#if app.searching}
+			<button
+				onclick={() => app.cancelSearch()}
+				class="flex-1 px-4 py-2.5 rounded-lg font-medium text-sm cursor-pointer border-0 transition-colors"
+				style="background: var(--danger); color: white;"
+			>
+				Cancel ({app.progress.done}/{app.progress.total})
+			</button>
+		{:else}
+			<button
+				onclick={() => app.search()}
+				disabled={app.candidates.length === 0}
+				class="flex-1 px-4 py-2.5 rounded-lg font-medium text-sm cursor-pointer border-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+				style="background: var(--accent); color: #0a0a0a;"
+			>
+				Dig {app.candidates.length} domain{app.candidates.length !== 1 ? 's' : ''}
+			</button>
+		{/if}
+
+		{#if app.terms.length > 0}
+			<span class="text-xs tabular-nums" style="color: var(--text-muted);">
+				{app.terms.length} term{app.terms.length !== 1 ? 's' : ''} &times;
+				{app.selectedMutations.size} mut &times;
+				{app.selectedTlds.size} tld
+			</span>
+		{/if}
+	</div>
+
+	<!-- Progress bar -->
+	{#if app.searching}
+		<div class="progress-bar">
+			<div
+				class="progress-fill"
+				style="width: {(app.progress.done / Math.max(1, app.progress.total) * 100).toFixed(1)}%"
+			></div>
+		</div>
+	{/if}
+</div>
