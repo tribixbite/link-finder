@@ -1,9 +1,36 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
 
-	function copyAvailable() {
+	let copyLabel = $state('Copy avail');
+	let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	async function copyAvailable() {
 		const text = app.exportAvailable();
-		if (text) navigator.clipboard.writeText(text);
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+			copyLabel = 'Copied!';
+			if (copyTimeout) clearTimeout(copyTimeout);
+			copyTimeout = setTimeout(() => { copyLabel = 'Copy avail'; }, 1500);
+		} catch {
+			copyLabel = 'Failed';
+			if (copyTimeout) clearTimeout(copyTimeout);
+			copyTimeout = setTimeout(() => { copyLabel = 'Copy avail'; }, 1500);
+		}
+	}
+
+	function exportCsv() {
+		const rows = app.filteredResults.map((r) =>
+			[r.domain, r.status, r.tld, r.mutation, r.nameLength, r.term, r.records.join(' ')].join(',')
+		);
+		const csv = ['domain,status,tld,mutation,length,term,records', ...rows].join('\n');
+		const blob = new Blob([csv], { type: 'text/csv' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `digr-${new Date().toISOString().slice(0, 10)}.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 </script>
 
@@ -26,14 +53,21 @@
 
 	<div class="flex items-center gap-2">
 		<!-- Copy available -->
-		{#if app.availableCount > 0}
-			<button
-				onclick={copyAvailable}
-				class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors"
-				style="background: var(--bg-tertiary); color: var(--text-secondary);"
-				title="Copy available domains to clipboard"
-			>Copy avail</button>
-		{/if}
+		<button
+			onclick={copyAvailable}
+			disabled={app.availableCount === 0}
+			class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+			style="background: {copyLabel === 'Copied!' ? 'color-mix(in srgb, var(--success) 20%, var(--bg-tertiary))' : 'var(--bg-tertiary)'}; color: {copyLabel === 'Copied!' ? 'var(--success)' : 'var(--text-secondary)'};"
+			title="Copy available domains to clipboard"
+		>{copyLabel}</button>
+
+		<!-- CSV export -->
+		<button
+			onclick={exportCsv}
+			class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors"
+			style="background: var(--bg-tertiary); color: var(--text-secondary);"
+			title="Download results as CSV"
+		>CSV</button>
 
 		<!-- View toggle -->
 		<div

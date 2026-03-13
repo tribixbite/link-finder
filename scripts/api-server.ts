@@ -10,6 +10,8 @@
 const PORT = 3001;
 const MAX_CONCURRENT = 12;
 const DIG_TIMEOUT_MS = 5000;
+const MAX_DOMAINS_PER_REQUEST = 500;
+const VALID_DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z]{2,})+$/i;
 
 interface CheckRequest {
 	domains: string[];
@@ -149,23 +151,25 @@ const server = Bun.serve({
 			return Response.json({ ok: true, pid: process.pid }, { headers: corsHeaders });
 		}
 
-		// Batch check (returns all at once)
-		if (url.pathname === '/api/check' && req.method === 'POST') {
+		// Shared domain validation for check/stream endpoints
+		if ((url.pathname === '/api/check' || url.pathname === '/api/stream') && req.method === 'POST') {
 			const body = (await req.json()) as CheckRequest;
 			if (!body.domains?.length) {
 				return Response.json({ error: 'domains array required' }, { status: 400, headers: corsHeaders });
 			}
-			const results = await checkBatch(body.domains);
-			return Response.json({ results }, { headers: corsHeaders });
-		}
+			// Sanitize: filter to valid domain names, cap at limit
+			const domains = body.domains
+				.filter((d): d is string => typeof d === 'string' && VALID_DOMAIN.test(d))
+				.slice(0, MAX_DOMAINS_PER_REQUEST);
+			if (domains.length === 0) {
+				return Response.json({ error: 'no valid domains provided' }, { status: 400, headers: corsHeaders });
+			}
 
-		// Stream check (SSE, sends results as they complete)
-		if (url.pathname === '/api/stream' && req.method === 'POST') {
-			const body = (await req.json()) as CheckRequest;
-			if (!body.domains?.length) {
-				return Response.json({ error: 'domains array required' }, { status: 400, headers: corsHeaders });
+			if (url.pathname === '/api/check') {
+				const results = await checkBatch(domains);
+				return Response.json({ results }, { headers: corsHeaders });
 			}
-			return handleStream(body.domains);
+			return handleStream(domains);
 		}
 
 		return Response.json({ error: 'not found' }, { status: 404, headers: corsHeaders });

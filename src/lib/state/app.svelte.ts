@@ -227,6 +227,33 @@ class AppState {
 	/** Abort controller for current search */
 	private abortController: AbortController | null = null;
 
+	/** Pending batch of SSE updates, flushed on a timer to reduce reactive churn */
+	private pendingUpdates: Array<{ domain: string; records: string[]; status: string; error?: string }> = [];
+	private flushTimer: ReturnType<typeof setTimeout> | null = null;
+	private lastProgress = 0;
+
+	/** Flush pending SSE updates into the results map in one batch */
+	private flushUpdates() {
+		if (this.pendingUpdates.length === 0) return;
+		const updated = new Map(this.results);
+		for (const upd of this.pendingUpdates) {
+			const existing = updated.get(upd.domain);
+			if (existing) {
+				updated.set(upd.domain, {
+					...existing,
+					records: upd.records,
+					status: upd.status as DomainResult['status'],
+					error: upd.error,
+					checkedAt: Date.now(),
+				});
+			}
+		}
+		this.results = updated;
+		this.progress = { done: this.lastProgress, total: this.progress.total };
+		this.pendingUpdates = [];
+		this.flushTimer = null;
+	}
+
 	/** Start domain search using SSE streaming */
 	async search() {
 		const candidates = this.candidates;
@@ -245,6 +272,8 @@ class AppState {
 		this.results = nextResults;
 		this.searching = true;
 		this.progress = { done: 0, total: candidates.length };
+		this.pendingUpdates = [];
+		this.lastProgress = 0;
 
 		try {
 			const domains = candidates.map((c) => c.domain);
@@ -272,24 +301,48 @@ class AppState {
 					try {
 						const event = JSON.parse(line.slice(6));
 						if (event.type === 'result') {
-							const existing = this.results.get(event.domain);
-							if (existing) {
-								// Update the existing entry
-								const updated = new Map(this.results);
-								updated.set(event.domain, {
-									...existing,
-									records: event.records,
-									status: event.status,
-									error: event.error,
-									checkedAt: Date.now(),
-								});
-								this.results = updated;
-								this.progress = { done: event.progress, total: this.progress.total };
+							this.pendingUpdates.push({
+								domain: event.domain,
+								records: event.records,
+								status: event.status,
+								error: event.error,
+							});
+							this.lastProgress = event.progress;
+							// Batch flush every 150ms to avoid per-result reactive updates
+							if (!this.flushTimer) {
+								this.flushTimer = setTimeout(() => this.flushUpdates(), 150);
 							}
 						}
 					} catch {
 						// skip malformed events
 					}
+				}
+			}
+
+			// Flush any remaining buffered updates
+			if (this.flushTimer) clearTimeout(this.flushTimer);
+			this.flushUpdates();
+
+			// Process any remaining partial buffer
+			if (buffer.startsWith('data: ')) {
+				try {
+					const event = JSON.parse(buffer.slice(6));
+					if (event.type === 'result') {
+						const existing = this.results.get(event.domain);
+						if (existing) {
+							const updated = new Map(this.results);
+							updated.set(event.domain, {
+								...existing,
+								records: event.records,
+								status: event.status,
+								error: event.error,
+								checkedAt: Date.now(),
+							});
+							this.results = updated;
+						}
+					}
+				} catch {
+					// partial event at end of stream — expected
 				}
 			}
 		} catch (err) {
@@ -298,6 +351,10 @@ class AppState {
 		} finally {
 			this.searching = false;
 			this.abortController = null;
+			if (this.flushTimer) {
+				clearTimeout(this.flushTimer);
+				this.flushUpdates();
+			}
 		}
 	}
 
@@ -313,6 +370,15 @@ class AppState {
 			.filter((r) => r.status === 'available')
 			.map((r) => r.domain)
 			.join('\n');
+	}
+
+	/** Deduplicated terms (for UI feedback) */
+	get uniqueTermCount(): number {
+		return new Set(this.terms).size;
+	}
+
+	get hasDuplicateTerms(): boolean {
+		return this.terms.length > this.uniqueTermCount;
 	}
 }
 

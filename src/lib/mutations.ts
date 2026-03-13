@@ -71,7 +71,7 @@ export function findDomainHacks(word: string, tlds: string[]): Array<{ name: str
 		const suffix = tld.slice(1); // remove leading dot
 		if (word.endsWith(suffix) && word.length > suffix.length) {
 			const name = word.slice(0, word.length - suffix.length);
-			if (name.length >= 1) {
+			if (name.length >= 2) { // min 2 chars for a valid domain name
 				results.push({ name, tld });
 			}
 		}

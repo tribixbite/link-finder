@@ -21,6 +21,11 @@
 		checking: '\u2022',
 		error: '!',
 	};
+
+	/** Build Namecheap registration URL for available domains */
+	function registrarUrl(domain: string): string {
+		return `https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(domain)}`;
+	}
 </script>
 
 <div
@@ -35,11 +40,25 @@
 					class="text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0"
 					class:checking-pulse={result.status === 'checking'}
 					style="background: color-mix(in srgb, {statusColors[result.status]} 20%, transparent); color: {statusColors[result.status]};"
+					aria-label={result.status}
 				>{statusIcons[result.status]}</span>
-				<span
-					class="text-sm font-semibold truncate"
-					style="color: var(--text-primary); font-family: ui-monospace, monospace;"
-				>{result.name}<span style="color: var(--text-muted);">{result.tld}</span></span>
+
+				{#if result.status === 'available'}
+					<a
+						href={registrarUrl(result.domain)}
+						target="_blank"
+						rel="noopener"
+						class="text-sm font-semibold truncate no-underline hover:underline"
+						style="color: var(--text-primary); font-family: ui-monospace, monospace;"
+						title="Register {result.domain} at Namecheap"
+					>{result.name}<span style="color: var(--text-muted);">{result.tld}</span></a>
+				{:else}
+					<span
+						class="text-sm font-semibold truncate"
+						style="color: var(--text-primary); font-family: ui-monospace, monospace;"
+						title={result.domain}
+					>{result.name}<span style="color: var(--text-muted);">{result.tld}</span></span>
+				{/if}
 			</div>
 
 			<!-- Meta row -->
@@ -63,7 +82,7 @@
 
 	<!-- DNS records (if taken) -->
 	{#if result.records.length > 0}
-		<div class="mt-2 ml-7 text-xs truncate" style="color: var(--text-muted); font-family: ui-monospace, monospace;">
+		<div class="mt-2 ml-7 text-xs truncate" style="color: var(--text-muted); font-family: ui-monospace, monospace;" title={result.records.join(', ')}>
 			{result.records.slice(0, 3).join(', ')}
 			{#if result.records.length > 3}
 				<span> +{result.records.length - 3}</span>

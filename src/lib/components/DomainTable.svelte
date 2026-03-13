@@ -23,6 +23,10 @@
 		checking: 'var(--accent)',
 		error: 'var(--warning)',
 	};
+
+	function registrarUrl(domain: string): string {
+		return `https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(domain)}`;
+	}
 </script>
 
 <div class="rounded-lg overflow-hidden" style="border: 1px solid var(--border);">
@@ -62,8 +66,14 @@
 			</div>
 
 			<!-- Domain -->
-			<div class="flex-1 min-w-[140px] truncate" style="font-family: ui-monospace, monospace;">
-				<span style="color: var(--text-primary);">{result.name}</span><span style="color: var(--text-muted);">{result.tld}</span>
+			<div class="flex-1 min-w-[140px] truncate" style="font-family: ui-monospace, monospace;" title={result.domain}>
+				{#if result.status === 'available'}
+					<a href={registrarUrl(result.domain)} target="_blank" rel="noopener" class="no-underline hover:underline">
+						<span style="color: var(--text-primary);">{result.name}</span><span style="color: var(--text-muted);">{result.tld}</span>
+					</a>
+				{:else}
+					<span style="color: var(--text-primary);">{result.name}</span><span style="color: var(--text-muted);">{result.tld}</span>
+				{/if}
 			</div>
 
 			<!-- TLD -->
