@@ -1,5 +1,6 @@
 import { generateCandidates } from '../mutations';
 import { isStale } from '../utils';
+import { toasts } from './toasts.svelte';
 import type {
 	DomainCandidate,
 	DomainResult,
@@ -25,6 +26,9 @@ function parseTerms(input: string): string[] {
 /** localStorage key prefix */
 const LS = 'digr-';
 
+/** Current schema version — bump when localStorage shape changes */
+const SCHEMA_VERSION = 1;
+
 /** Maximum number of results to persist (prune oldest by checkedAt) */
 const MAX_STORED_RESULTS = 2000;
 
@@ -38,6 +42,14 @@ let _pendingUpdates: Array<{ domain: string; records: string[]; status: string; 
 let _flushTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastProgress = 0;
 let _persistInputTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Run any needed schema migrations based on stored version */
+function runMigrations(): void {
+	const stored = parseInt(localStorage.getItem(LS + 'schema-version') ?? '0', 10);
+	if (stored >= SCHEMA_VERSION) return;
+	// Future migrations go here: if (stored < 2) { ... }
+	localStorage.setItem(LS + 'schema-version', String(SCHEMA_VERSION));
+}
 
 /** Safe JSON parse with fallback */
 function safeParse<T>(key: string, fallback: T): T {
@@ -247,6 +259,12 @@ class AppState {
 				case 'length':
 					cmp = a.nameLength - b.nameLength || a.domain.localeCompare(b.domain);
 					break;
+				case 'price': {
+					const pa = parseFloat(this.getPrice(a.tld) ?? '') || Infinity;
+					const pb = parseFloat(this.getPrice(b.tld) ?? '') || Infinity;
+					cmp = pa - pb || a.domain.localeCompare(b.domain);
+					break;
+				}
 			}
 			return this.sort.dir === 'asc' ? cmp : -cmp;
 		});
@@ -301,10 +319,13 @@ class AppState {
 
 	/** Re-check all stale results (older than 24h) */
 	async recheckStale() {
-		const staleDomains = [...this.results.values()]
-			.filter((r) => r.status !== 'checking' && isStale(r.checkedAt))
-			.map((r) => r.domain);
-		if (staleDomains.length === 0) return;
+		const staleEntries = [...this.results.values()]
+			.filter((r) => r.status !== 'checking' && isStale(r.checkedAt));
+		if (staleEntries.length === 0) return;
+
+		// Capture pre-recheck statuses for change detection
+		const oldStatuses = new Map<string, DomainResult['previousStatus']>(staleEntries.map((r) => [r.domain, r.status as DomainResult['previousStatus']]));
+		const staleDomains = staleEntries.map((r) => r.domain);
 
 		// Set all stale to checking
 		const updated = new Map(this.results);
@@ -322,20 +343,27 @@ class AppState {
 			});
 			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string; error?: string }> };
 			if (data.results) {
+				let changed = 0;
 				const next = new Map(this.results);
 				for (const r of data.results) {
 					const entry = next.get(r.domain);
 					if (entry) {
+						const oldStatus = oldStatuses.get(r.domain);
+						const newStatus = r.status as DomainResult['status'];
+						const statusChanged = oldStatus && oldStatus !== newStatus;
+						if (statusChanged) changed++;
 						next.set(r.domain, {
 							...entry,
 							records: r.records,
-							status: r.status as DomainResult['status'],
+							status: newStatus,
 							error: r.error,
 							checkedAt: Date.now(),
+							previousStatus: statusChanged ? oldStatus : entry.previousStatus,
 						});
 					}
 				}
 				this.results = next;
+				toasts.success(`Rechecked ${staleDomains.length} stale${changed > 0 ? `, ${changed} changed` : ''}`);
 			}
 		} catch {
 			const next = new Map(this.results);
@@ -378,6 +406,33 @@ class AppState {
 	/** Import saved lists + domains from JSON, merging by dedup */
 	importSaved(json: string): { lists: number; domains: number } {
 		const data = JSON.parse(json) as { lists?: DomainList[]; saved?: SavedDomain[] };
+
+		// Validate JSON structure
+		if (typeof data !== 'object' || data === null) {
+			throw new Error('Invalid import: expected JSON object');
+		}
+		if (data.lists && !Array.isArray(data.lists)) {
+			throw new Error('Invalid import: lists must be an array');
+		}
+		if (data.saved && !Array.isArray(data.saved)) {
+			throw new Error('Invalid import: saved must be an array');
+		}
+		// Validate required fields on each list entry
+		if (data.lists) {
+			for (const l of data.lists) {
+				if (!l.id || !l.name || typeof l.createdAt !== 'number') {
+					throw new Error('Invalid import: list missing required fields (id, name, createdAt)');
+				}
+			}
+		}
+		// Validate required fields on each saved domain entry
+		if (data.saved) {
+			for (const s of data.saved) {
+				if (!s.domain || !s.listId || !s.status || typeof s.addedAt !== 'number') {
+					throw new Error('Invalid import: saved domain missing required fields (domain, listId, status, addedAt)');
+				}
+			}
+		}
 		let listsAdded = 0;
 		let domainsAdded = 0;
 
@@ -641,6 +696,8 @@ class AppState {
 		const existing = this.results.get(domain);
 		if (!existing) return;
 
+		const oldStatus = existing.status !== 'checking' ? existing.status : undefined;
+
 		// Set to checking state
 		const updated = new Map(this.results);
 		updated.set(domain, { ...existing, status: 'checking', error: undefined });
@@ -658,12 +715,15 @@ class AppState {
 				const next = new Map(this.results);
 				const entry = next.get(domain);
 				if (entry) {
+					const newStatus = r.status as DomainResult['status'];
+					const statusChanged = oldStatus && oldStatus !== newStatus;
 					next.set(domain, {
 						...entry,
 						records: r.records,
-						status: r.status as DomainResult['status'],
+						status: newStatus,
 						error: r.error,
 						checkedAt: Date.now(),
+						previousStatus: statusChanged ? oldStatus : entry.previousStatus,
 					});
 					this.results = next;
 				}
@@ -682,10 +742,12 @@ class AppState {
 
 	/** Re-check all domains with error status */
 	async recheckAllErrors() {
-		const errorDomains = [...this.results.values()]
-			.filter((r) => r.status === 'error')
-			.map((r) => r.domain);
-		if (errorDomains.length === 0) return;
+		const errorEntries = [...this.results.values()]
+			.filter((r) => r.status === 'error');
+		if (errorEntries.length === 0) return;
+
+		const oldStatuses = new Map<string, DomainResult['previousStatus']>(errorEntries.map((r) => [r.domain, r.status as DomainResult['previousStatus']]));
+		const errorDomains = errorEntries.map((r) => r.domain);
 
 		// Set all to checking
 		const updated = new Map(this.results);
@@ -703,20 +765,27 @@ class AppState {
 			});
 			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string; error?: string }> };
 			if (data.results) {
+				let resolved = 0;
 				const next = new Map(this.results);
 				for (const r of data.results) {
 					const entry = next.get(r.domain);
 					if (entry) {
+						const oldStatus = oldStatuses.get(r.domain);
+						const newStatus = r.status as DomainResult['status'];
+						const statusChanged = oldStatus && oldStatus !== newStatus;
+						if (newStatus !== 'error') resolved++;
 						next.set(r.domain, {
 							...entry,
 							records: r.records,
-							status: r.status as DomainResult['status'],
+							status: newStatus,
 							error: r.error,
 							checkedAt: Date.now(),
+							previousStatus: statusChanged ? oldStatus : entry.previousStatus,
 						});
 					}
 				}
 				this.results = next;
+				toasts.success(`Retried ${errorDomains.length} errors, ${resolved} resolved`);
 			}
 		} catch {
 			// Restore error state on fetch failure
@@ -741,10 +810,17 @@ class AppState {
 
 	/** Initialize theme from localStorage, fetch pricing, bind visibility persistence */
 	initTheme() {
+		// Run schema migrations before anything else
+		runMigrations();
+
 		const saved = localStorage.getItem('digr-theme') as 'dark' | 'light' | null;
 		if (saved) {
 			this.theme = saved;
 			document.documentElement.setAttribute('data-theme', saved);
+		} else if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: light)').matches) {
+			// No saved pref — detect OS preference
+			this.theme = 'light';
+			document.documentElement.setAttribute('data-theme', 'light');
 		}
 		// Fetch TLD pricing (non-blocking)
 		this.fetchPricing();
@@ -889,6 +965,24 @@ class AppState {
 	cancelSearch() {
 		_abortController?.abort();
 		this.searching = false;
+	}
+
+	/** Clear all results */
+	clearResults() {
+		this.results = new Map();
+		this.progress = { done: 0, total: 0 };
+		this.persist();
+	}
+
+	/** Clear stale results older than N days (default 7) */
+	clearStaleResults(daysOld = 7) {
+		const cutoff = Date.now() - daysOld * 24 * 60 * 60 * 1000;
+		const next = new Map(this.results);
+		for (const [key, r] of next) {
+			if (r.checkedAt && r.checkedAt < cutoff) next.delete(key);
+		}
+		this.results = next;
+		this.persist();
 	}
 
 	/** Export available domains as text */

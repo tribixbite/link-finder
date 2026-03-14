@@ -1,13 +1,12 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
+	import { toasts } from '$lib/state/toasts.svelte';
 
 	let editingListId = $state<string | null>(null);
 	let editName = $state('');
 	let newListName = $state('');
 
 	let filteredSaved = $derived(app.getSavedDomains(app.savedFilterListId));
-	let importStatus = $state('');
-	let importTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	function exportSaved() {
 		const json = app.exportSaved();
@@ -18,6 +17,7 @@
 		a.download = `digr-saved-${new Date().toISOString().slice(0, 10)}.json`;
 		a.click();
 		URL.revokeObjectURL(url);
+		toasts.success('Saved domains exported');
 	}
 
 	function handleImport(e: Event) {
@@ -28,12 +28,10 @@
 		reader.onload = () => {
 			try {
 				const result = app.importSaved(reader.result as string);
-				importStatus = `+${result.lists}L +${result.domains}D`;
-			} catch {
-				importStatus = 'Invalid file';
+				toasts.success(`Imported +${result.lists} lists, +${result.domains} domains`);
+			} catch (err) {
+				toasts.error(err instanceof Error ? err.message : 'Invalid import file');
 			}
-			if (importTimeout) clearTimeout(importTimeout);
-			importTimeout = setTimeout(() => { importStatus = ''; }, 2500);
 			input.value = '';
 		};
 		reader.readAsText(file);
@@ -101,9 +99,6 @@
 					Import
 					<input type="file" accept=".json" class="hidden" onchange={handleImport} />
 				</label>
-				{#if importStatus}
-					<span class="text-xs" style="color: var(--success);">{importStatus}</span>
-				{/if}
 				<button
 					onclick={() => { app.savedViewOpen = false; }}
 					class="w-7 h-7 rounded flex items-center justify-center border-0 cursor-pointer"

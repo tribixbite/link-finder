@@ -12,11 +12,14 @@
 	import DomainCard from '$lib/components/DomainCard.svelte';
 	import DomainTable from '$lib/components/DomainTable.svelte';
 	import SavedPanel from '$lib/components/SavedPanel.svelte';
+	import Toast from '$lib/components/Toast.svelte';
 
 	const INITIAL_BATCH = 60;
 	const LOAD_MORE = 80;
 
 	let visibleCount = $state(INITIAL_BATCH);
+	/** Guards URL sync effect until onMount has finished applying URL params */
+	let _urlInitialized = $state(false);
 
 	let visibleResults = $derived(app.filteredResults.slice(0, visibleCount));
 	let hasMore = $derived(visibleCount < app.filteredResults.length);
@@ -58,7 +61,9 @@
 	let urlSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Reactive URL sync: update URL when search state changes (debounced)
+	// Guarded by _urlInitialized to avoid overwriting URL params before onMount processes them
 	$effect(() => {
+		if (!_urlInitialized) return;
 		const search = encodeSearchParams({
 			terms: app.termsInput || undefined,
 			tlds: app.selectedTlds.size > 0 ? [...app.selectedTlds] : undefined,
@@ -88,7 +93,28 @@
 			if (urlState.sort) app.sort = urlState.sort;
 			if (urlState.status) app.setStatusFilter(urlState.status);
 		}
+
+		// Enable URL sync after initial state is set
+		_urlInitialized = true;
 	});
+
+	/** j/k keyboard navigation for domain cards */
+	function handleGlobalKeydown(e: KeyboardEvent) {
+		// Don't capture when focus is in an input/textarea
+		const tag = (e.target as HTMLElement)?.tagName;
+		if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+		if (e.key === 'j' || e.key === 'k') {
+			e.preventDefault();
+			const cards = [...document.querySelectorAll('[data-domain-card]')] as HTMLElement[];
+			if (cards.length === 0) return;
+			const currentIdx = cards.findIndex((el) => el === document.activeElement);
+			const nextIdx = e.key === 'j'
+				? Math.min(currentIdx + 1, cards.length - 1)
+				: Math.max(currentIdx - 1, 0);
+			cards[nextIdx]?.focus();
+		}
+	}
 
 	onDestroy(() => {
 		observer?.disconnect();
@@ -96,10 +122,18 @@
 	});
 </script>
 
-<div class="min-h-dvh flex flex-col" style="background: var(--bg-primary);">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="min-h-dvh flex flex-col" style="background: var(--bg-primary);" onkeydown={handleGlobalKeydown}>
+	<!-- Skip to content link (F9 accessibility) -->
+	<a
+		href="#main-content"
+		class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[200] focus:px-3 focus:py-2 focus:rounded-lg focus:text-sm"
+		style="background: var(--accent); color: #0a0a0a;"
+	>Skip to content</a>
+
 	<Header />
 
-	<main class="flex-1 flex flex-col gap-4 p-4 max-w-6xl mx-auto w-full">
+	<main id="main-content" class="flex-1 flex flex-col gap-4 p-4 max-w-6xl mx-auto w-full">
 		<!-- Search input area -->
 		<SearchInput />
 
@@ -194,4 +228,7 @@
 	{#if app.savedViewOpen}
 		<SavedPanel />
 	{/if}
+
+	<!-- Toast notifications -->
+	<Toast />
 </div>

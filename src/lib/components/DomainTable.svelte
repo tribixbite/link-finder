@@ -16,6 +16,7 @@
 		{ field: 'tld', label: 'TLD', class: 'w-16' },
 		{ field: 'mutation', label: 'Mutation', class: 'w-24 hidden sm:block' },
 		{ field: 'length', label: 'Len', class: 'w-12 text-right' },
+		{ field: 'price', label: 'Price', class: 'w-16 text-right hidden sm:block' },
 	];
 
 	/** Get formatted price for a TLD */
@@ -76,7 +77,6 @@
 				{/if}
 			</button>
 		{/each}
-		<div class="w-16 text-right hidden sm:block" style="color: var(--text-muted);">Price</div>
 		<div class="w-14 text-right hidden sm:block" style="color: var(--text-muted);">Age</div>
 		<div class="w-7"></div>
 	</div>
@@ -121,7 +121,12 @@
 			</div>
 
 			<!-- TLD -->
-			<div class="w-16" style="color: var(--text-muted);">{result.tld}</div>
+			<div class="w-16" style="color: var(--text-muted);">
+				{result.tld}
+				{#if result.previousStatus && result.previousStatus !== result.status}
+					<span class="text-xs" style="color: var(--warning); font-size: 0.6rem;" title="Previously {result.previousStatus}">was {result.previousStatus}</span>
+				{/if}
+			</div>
 
 			<!-- Mutation -->
 			<div class="w-24 hidden sm:block" style="color: var(--text-muted);">{MUTATION_INFO[result.mutation].label}</div>

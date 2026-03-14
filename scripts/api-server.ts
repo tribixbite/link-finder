@@ -65,6 +65,9 @@ const WHOIS_REGISTERED_PATTERNS = [
 	/created:/i,
 ];
 
+// --- Request dedup: coalesce concurrent checks for the same domain ---
+const _pendingChecks = new Map<string, Promise<DomainCheckResult>>();
+
 // --- Server-side result cache (15min TTL) ---
 const _resultCache = new Map<string, { result: DomainCheckResult; cachedAt: number }>();
 
@@ -222,66 +225,77 @@ async function checkDomain(domain: string): Promise<DomainCheckResult> {
 	const cached = getCachedResult(domain);
 	if (cached) return cached;
 
-	try {
-		const dig = await digCheck(domain);
+	// Dedup: return existing in-flight promise for same domain
+	const pending = _pendingChecks.get(domain);
+	if (pending) return pending;
 
-		// If dig found records, domain is definitely taken
-		if (dig.records.length > 0) {
-			const r: DomainCheckResult = { domain, records: dig.records, status: 'taken', method: 'dig' };
-			cacheResult(r);
-			return r;
-		}
+	const promise = (async (): Promise<DomainCheckResult> => {
+		try {
+			const dig = await digCheck(domain);
 
-		// If NOT NXDOMAIN (NOERROR with no records), domain is registered but has no A records
-		if (!dig.nxdomain) {
-			const r: DomainCheckResult = { domain, records: [], status: 'taken', method: 'dig' };
-			cacheResult(r);
-			return r;
-		}
+			// If dig found records, domain is definitely taken
+			if (dig.records.length > 0) {
+				const r: DomainCheckResult = { domain, records: dig.records, status: 'taken', method: 'dig' };
+				cacheResult(r);
+				return r;
+			}
 
-		// NXDOMAIN — domain doesn't exist in DNS, verify with whois
-		const whois = await whoisCheck(domain);
-		if (whois === 'reserved') {
-			const r: DomainCheckResult = { domain, records: [], status: 'reserved', method: 'whois' };
-			cacheResult(r);
-			return r;
-		}
-		if (whois === 'taken') {
-			const r: DomainCheckResult = { domain, records: [], status: 'taken', method: 'whois' };
-			cacheResult(r);
-			return r;
-		}
-		if (whois === 'available') {
-			const r: DomainCheckResult = { domain, records: [], status: 'available', method: 'whois' };
-			cacheResult(r);
-			return r;
-		}
+			// If NOT NXDOMAIN (NOERROR with no records), domain is registered but has no A records
+			if (!dig.nxdomain) {
+				const r: DomainCheckResult = { domain, records: [], status: 'taken', method: 'dig' };
+				cacheResult(r);
+				return r;
+			}
 
-		// Whois errored after retries — report as available with caveat (NXDOMAIN is strong signal)
-		const r: DomainCheckResult = { domain, records: [], status: 'available', method: 'dig', error: 'whois failed after retries' };
-		cacheResult(r);
-		return r;
-	} catch (err) {
-		return {
-			domain,
-			records: [],
-			status: 'error',
-			error: err instanceof Error ? err.message : String(err),
-		};
-	}
+			// NXDOMAIN — domain doesn't exist in DNS, verify with whois
+			const whois = await whoisCheck(domain);
+			if (whois === 'reserved') {
+				const r: DomainCheckResult = { domain, records: [], status: 'reserved', method: 'whois' };
+				cacheResult(r);
+				return r;
+			}
+			if (whois === 'taken') {
+				const r: DomainCheckResult = { domain, records: [], status: 'taken', method: 'whois' };
+				cacheResult(r);
+				return r;
+			}
+			if (whois === 'available') {
+				const r: DomainCheckResult = { domain, records: [], status: 'available', method: 'whois' };
+				cacheResult(r);
+				return r;
+			}
+
+			// Whois errored after retries — report as available with caveat (NXDOMAIN is strong signal)
+			const r: DomainCheckResult = { domain, records: [], status: 'available', method: 'dig', error: 'whois failed after retries' };
+			cacheResult(r);
+			return r;
+		} catch (err) {
+			return {
+				domain,
+				records: [],
+				status: 'error',
+				error: err instanceof Error ? err.message : String(err),
+			};
+		}
+	})();
+
+	_pendingChecks.set(domain, promise);
+	promise.finally(() => _pendingChecks.delete(domain));
+	return promise;
 }
 
-/** Process domains with concurrency limit */
+/** Process domains with concurrency limit, aborting on signal */
 async function runConcurrent<T>(
 	items: T[],
 	concurrency: number,
 	fn: (item: T) => Promise<void>,
+	signal?: AbortSignal,
 ): Promise<void> {
 	const queue = [...items];
 	const active = new Set<Promise<void>>();
 
-	while (queue.length > 0 || active.size > 0) {
-		while (queue.length > 0 && active.size < concurrency) {
+	while ((queue.length > 0 || active.size > 0) && !signal?.aborted) {
+		while (queue.length > 0 && active.size < concurrency && !signal?.aborted) {
 			const item = queue.shift()!;
 			const task = fn(item).finally(() => active.delete(task));
 			active.add(task);
@@ -301,27 +315,33 @@ async function checkBatch(domains: string[]): Promise<DomainCheckResult[]> {
 	return results;
 }
 
-/** SSE endpoint: streams results as they complete */
-async function handleStream(domains: string[]): Promise<Response> {
+/** SSE endpoint: streams results as they complete, aborts on client disconnect */
+async function handleStream(domains: string[], signal?: AbortSignal): Promise<Response> {
 	const encoder = new TextEncoder();
 	const stream = new ReadableStream({
 		async start(controller) {
 			let done = 0;
 
 			const sendEvent = (data: object) => {
-				controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+				if (signal?.aborted) return;
+				try {
+					controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+				} catch {
+					// Controller closed (client disconnected)
+				}
 			};
 
 			sendEvent({ type: 'start', total: domains.length });
 
 			await runConcurrent(domains, MAX_CONCURRENT_DIG, async (domain) => {
+				if (signal?.aborted) return;
 				const result = await checkDomain(domain);
 				done++;
 				sendEvent({ type: 'result', ...result, progress: done });
-			});
+			}, signal);
 
 			sendEvent({ type: 'done', total: domains.length });
-			controller.close();
+			try { controller.close(); } catch { /* already closed */ }
 		},
 	});
 
@@ -578,7 +598,7 @@ Bun.serve({
 				const results = await checkBatch(domains);
 				return Response.json({ results }, { headers: corsHeaders });
 			}
-			return handleStream(domains);
+			return handleStream(domains, req.signal);
 		}
 
 		return Response.json({ error: 'not found' }, { status: 404, headers: corsHeaders });

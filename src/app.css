@@ -61,6 +61,37 @@ body { margin: 0; min-height: 100dvh; }
 ::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+/* Focus outline for keyboard-navigable domain cards (F9 accessibility) */
+[data-domain-card]:focus {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* System theme auto-detection: light mode when no explicit theme is set (F11) */
+@media (prefers-color-scheme: light) {
+	:root:not([data-theme="dark"]) {
+		--bg-primary: #fafafa;
+		--bg-secondary: #f5f5f5;
+		--bg-tertiary: #e5e5e5;
+		--bg-elevated: #ffffff;
+		--text-primary: #171717;
+		--text-secondary: #525252;
+		--text-muted: #a3a3a3;
+		--accent: #0891b2;
+		--accent-hover: #06b6d4;
+		--accent-muted: #0891b215;
+		--border: #e5e5e5;
+		--border-hover: #d4d4d4;
+		--ring: #0891b240;
+		--danger: #dc2626;
+		--success: #16a34a;
+		--warning: #ca8a04;
+		--available: #16a34a;
+		--taken: #dc2626;
+		--unknown: #a3a3a3;
+	}
+}
+
 /* Domain result items — no content-visibility to avoid blank card placeholders in grid */
 
 /* Filter pill styles */

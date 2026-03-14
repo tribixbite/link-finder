@@ -50,9 +50,14 @@
 
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="rounded-lg p-3 transition-colors"
 	style="background: var(--bg-secondary); border: 1px solid {result.status === 'available' ? 'color-mix(in srgb, var(--available) 30%, var(--border))' : 'var(--border)'};"
+	data-domain-card
+	tabindex="0"
+	role="article"
+	aria-label="{result.domain} — {result.status}"
 >
 	<div class="flex items-start justify-between gap-2">
 		<!-- Domain name -->
@@ -93,6 +98,9 @@
 				<span class="text-xs tabular-nums" style="color: var(--text-muted);">{result.nameLength}ch</span>
 				{#if price}
 					<span class="text-xs tabular-nums font-medium" style="color: var(--success);" title={pricingTooltip()}>${price}/yr</span>
+				{/if}
+				{#if result.previousStatus && result.previousStatus !== result.status}
+					<span class="text-xs px-1 rounded" style="background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning);" title="Previously {result.previousStatus}">was {result.previousStatus}</span>
 				{/if}
 				{#if result.checkedAt && result.status !== 'checking'}
 					<span class="text-xs tabular-nums" style="color: {isStale(result.checkedAt) ? 'var(--warning)' : 'var(--text-muted)'};">{formatAge(result.checkedAt)}</span>

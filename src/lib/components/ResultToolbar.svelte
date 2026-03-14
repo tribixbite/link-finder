@@ -1,21 +1,22 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
-
-	let copyLabel = $state('Copy avail');
-	let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+	import { toasts } from '$lib/state/toasts.svelte';
 
 	async function copyAvailable() {
 		const text = app.exportAvailable();
 		if (!text) return;
 		try {
 			await navigator.clipboard.writeText(text);
-			copyLabel = 'Copied!';
-			if (copyTimeout) clearTimeout(copyTimeout);
-			copyTimeout = setTimeout(() => { copyLabel = 'Copy avail'; }, 1500);
+			toasts.success('Available domains copied');
 		} catch {
-			copyLabel = 'Failed';
-			if (copyTimeout) clearTimeout(copyTimeout);
-			copyTimeout = setTimeout(() => { copyLabel = 'Copy avail'; }, 1500);
+			toasts.error('Copy failed');
+		}
+	}
+
+	function clearResults() {
+		if (confirm('Clear all results? This cannot be undone.')) {
+			app.clearResults();
+			toasts.info('Results cleared');
 		}
 	}
 
@@ -38,7 +39,7 @@
 	class="flex items-center justify-between px-3 py-2 rounded-lg"
 	style="background: var(--bg-secondary); border: 1px solid var(--border);"
 >
-	<div class="flex items-center gap-3">
+	<div class="flex items-center gap-3" role="status" aria-live="polite">
 		<span class="text-sm font-medium tabular-nums" style="color: var(--text-primary);">
 			{app.filteredResults.length}
 			<span style="color: var(--text-muted);">result{app.filteredResults.length !== 1 ? 's' : ''}</span>
@@ -62,14 +63,22 @@
 			>Recheck stale ({app.staleCount})</button>
 		{/if}
 
+		<!-- Clear results -->
+		<button
+			onclick={clearResults}
+			class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors"
+			style="background: color-mix(in srgb, var(--danger) 10%, var(--bg-tertiary)); color: var(--danger);"
+			title="Clear all results"
+		>Clear</button>
+
 		<!-- Copy available -->
 		<button
 			onclick={copyAvailable}
 			disabled={app.availableCount === 0}
 			class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-			style="background: {copyLabel === 'Copied!' ? 'color-mix(in srgb, var(--success) 20%, var(--bg-tertiary))' : 'var(--bg-tertiary)'}; color: {copyLabel === 'Copied!' ? 'var(--success)' : 'var(--text-secondary)'};"
+			style="background: var(--bg-tertiary); color: var(--text-secondary);"
 			title="Copy available domains to clipboard"
-		>{copyLabel}</button>
+		>Copy avail</button>
 
 		<!-- CSV export -->
 		<button

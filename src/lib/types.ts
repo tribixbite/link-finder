@@ -26,6 +26,8 @@ export interface DomainResult extends DomainCandidate {
 	error?: string;
 	/** Timestamp of check */
 	checkedAt?: number;
+	/** Previous status before recheck (only set when status changed) */
+	previousStatus?: 'available' | 'taken' | 'reserved' | 'error';
 }
 
 /** Supported mutation types */
@@ -40,7 +42,8 @@ export type MutationType =
 	| 'addHq'
 	| 'plural'
 	| 'doubleLastLetter'
-	| 'domainHack';
+	| 'domainHack'
+	| 'compound';
 
 /** Display metadata for each mutation type */
 export const MUTATION_INFO: Record<MutationType, { label: string; description: string; example: string }> = {
@@ -55,6 +58,7 @@ export const MUTATION_INFO: Record<MutationType, { label: string; description: s
 	plural:           { label: 'Plural',          description: 'Add s/es ending',          example: 'specs → torches' },
 	doubleLastLetter: { label: 'Double last',     description: 'Double final consonant',   example: 'digg → specc' },
 	domainHack:       { label: 'Domain hack',     description: 'TLD forms word ending',    example: 'del.icio.us' },
+	compound:         { label: 'Compound',        description: 'Combine term pairs',       example: 'torchlight' },
 };
 
 /** Registrar identifiers */
@@ -179,7 +183,7 @@ export interface Filters {
 }
 
 /** Sort options */
-export type SortField = 'domain' | 'name' | 'tld' | 'mutation' | 'status' | 'length';
+export type SortField = 'domain' | 'name' | 'tld' | 'mutation' | 'status' | 'length' | 'price';
 export type SortDir = 'asc' | 'desc';
 
 /** TLD pricing from Porkbun */
@@ -204,6 +208,32 @@ export interface SavedDomain {
 	addedAt: number;
 	notes?: string;
 }
+
+/** TLD preset for quick selection */
+export interface TldPreset {
+	label: string;
+	description: string;
+	tlds: readonly string[];
+}
+
+/** Quick-select TLD preset groups */
+export const TLD_PRESETS: TldPreset[] = [
+	{
+		label: 'Cheap',
+		description: 'Budget-friendly TLDs under ~$5/yr',
+		tlds: ['.com', '.net', '.org', '.info', '.xyz', '.site', '.online', '.top', '.club', '.fun', '.icu', '.space', '.click', '.link', '.store'],
+	},
+	{
+		label: 'Dev',
+		description: 'Developer-friendly TLDs',
+		tlds: ['.dev', '.app', '.io', '.sh', '.co', '.ai', '.tech', '.codes', '.run', '.build', '.software', '.tools', '.cloud', '.systems', '.engineering'],
+	},
+	{
+		label: 'ccTLDs',
+		description: 'Country-code TLDs popular for branding',
+		tlds: ['.co', '.io', '.me', '.us', '.cc', '.to', '.in', '.is', '.it', '.ly', '.so', '.sh', '.fm', '.tv', '.gg', '.im', '.ai'],
+	},
+];
 
 /** Preset colors for domain lists */
 export const LIST_COLORS = [

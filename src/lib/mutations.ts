@@ -131,6 +131,7 @@ function applyMutation(word: string, mutation: MutationType): string | null {
 		case 'plural': return pluralize(word);
 		case 'doubleLastLetter': return doubleLastLetter(word);
 		case 'domainHack': return null; // handled separately
+		case 'compound': return null; // handled separately in generateCandidates
 	}
 }
 
@@ -147,11 +148,42 @@ export function generateCandidates(
 	const candidates: DomainCandidate[] = [];
 	const tldArr = [...tlds];
 
+	// Collect cleaned terms for compound generation
+	const cleanTerms: string[] = [];
+	for (const rawTerm of terms) {
+		const t = rawTerm.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+		if (t && t.length >= 2) cleanTerms.push(t);
+	}
+
+	// Compound mutation: ordered pairs of terms (requires 2+ terms)
+	if (mutations.has('compound') && cleanTerms.length >= 2) {
+		for (let i = 0; i < cleanTerms.length; i++) {
+			for (let j = 0; j < cleanTerms.length; j++) {
+				if (i === j) continue;
+				const compound = cleanTerms[i] + cleanTerms[j];
+				for (const tld of tldArr) {
+					const domain = `${compound}${tld}`;
+					if (seen.has(domain)) continue;
+					seen.add(domain);
+					candidates.push({
+						domain,
+						term: `${cleanTerms[i]}+${cleanTerms[j]}`,
+						name: compound,
+						tld,
+						mutation: 'compound',
+						nameLength: compound.length,
+					});
+				}
+			}
+		}
+	}
+
 	for (const rawTerm of terms) {
 		const term = rawTerm.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
 		if (!term || term.length < 2) continue;
 
 		for (const mutation of mutations) {
+			if (mutation === 'compound') continue; // handled above
 			if (mutation === 'domainHack') {
 				// Domain hack generates its own TLD pairings
 				const hacks = findDomainHacks(term, tldArr);

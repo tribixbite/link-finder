@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
-	import { TLDS, POPULAR_TLDS, MUTATION_INFO } from '$lib/types';
+	import { TLDS, POPULAR_TLDS, MUTATION_INFO, TLD_PRESETS } from '$lib/types';
 	import type { MutationType } from '$lib/types';
 
 	const allMutations = Object.keys(MUTATION_INFO) as MutationType[];
@@ -82,6 +82,18 @@
 					style="background: var(--bg-tertiary); color: var(--text-muted);"
 				>none</button>
 			</div>
+		</div>
+
+		<!-- TLD presets -->
+		<div class="flex gap-1 mb-1.5">
+			{#each TLD_PRESETS as preset}
+				<button
+					onclick={() => { app.selectedTlds = new Set(preset.tlds); app.persist(); }}
+					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
+					style="background: var(--accent-muted); color: var(--accent);"
+					title={preset.description}
+				>{preset.label}</button>
+			{/each}
 		</div>
 
 		<!-- TLD search (shown when expanded or 470+ TLDs) -->
