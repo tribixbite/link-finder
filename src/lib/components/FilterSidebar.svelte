@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
-	import { MUTATION_INFO } from '$lib/types';
+	import { MUTATION_INFO, REGISTRARS, REGISTRAR_IDS } from '$lib/types';
 	import type { MutationType } from '$lib/types';
 
 	/** Unique TLDs in current results */
@@ -113,6 +113,35 @@
 					>{MUTATION_INFO[m].label}</button>
 				{/each}
 			</div>
+		</div>
+	{/if}
+
+	<!-- Registrar filter -->
+	{#if app.registrarTlds.size > 0}
+		<div>
+			<span class="block text-xs font-medium mb-1.5" style="color: var(--text-muted);">Registrar</span>
+			<div class="flex flex-wrap gap-1">
+				{#each REGISTRAR_IDS as rid}
+					{@const reg = REGISTRARS[rid]}
+					<button
+						onclick={() => app.toggleFilterRegistrar(rid)}
+						class="chip text-xs"
+						class:active={app.filters.registrars.has(rid)}
+						style="padding: 2px 6px; font-size: 0.7rem;"
+					>
+						<span
+							class="inline-block w-2 h-2 rounded-full"
+							style="background: {reg.color};"
+						></span>
+						{reg.name}
+					</button>
+				{/each}
+			</div>
+			{#if app.filters.registrars.size > 1}
+				<span class="text-xs mt-1 block" style="color: var(--text-muted);">
+					Showing TLDs sold by all selected
+				</span>
+			{/if}
 		</div>
 	{/if}
 

@@ -1,12 +1,33 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
-	import { TLDS, MUTATION_INFO } from '$lib/types';
+	import { TLDS, POPULAR_TLDS, MUTATION_INFO } from '$lib/types';
 	import type { MutationType } from '$lib/types';
 
 	const allMutations = Object.keys(MUTATION_INFO) as MutationType[];
 
+	let showAllTlds = $state(false);
+	let tldSearch = $state('');
+
+	/** TLDs to display based on search + expand state */
+	let visibleTlds = $derived(() => {
+		if (tldSearch) {
+			const q = tldSearch.toLowerCase();
+			return TLDS.filter((t) => t.includes(q));
+		}
+		return showAllTlds ? TLDS : POPULAR_TLDS;
+	});
+
+	/** Count of selected TLDs not currently visible (hidden in collapsed view) */
+	let hiddenSelectedCount = $derived(() => {
+		if (showAllTlds || tldSearch) return 0;
+		let count = 0;
+		for (const tld of app.selectedTlds) {
+			if (!POPULAR_TLDS.includes(tld)) count++;
+		}
+		return count;
+	});
+
 	function handleKeydown(e: KeyboardEvent) {
-		// Ctrl/Cmd+Enter to search
 		if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
 			e.preventDefault();
 			app.search();
@@ -38,7 +59,12 @@
 	<!-- TLD selector -->
 	<div>
 		<div class="flex items-center justify-between mb-1.5">
-			<span class="text-sm font-medium" style="color: var(--text-secondary);">TLDs</span>
+			<span class="text-sm font-medium" style="color: var(--text-secondary);">
+				TLDs
+				<span class="text-xs font-normal" style="color: var(--text-muted);">
+					({app.selectedTlds.size}/{TLDS.length})
+				</span>
+			</span>
 			<div class="flex gap-1">
 				<button
 					onclick={() => { app.selectedTlds = new Set(TLDS); app.persist(); }}
@@ -46,14 +72,30 @@
 					style="background: var(--bg-tertiary); color: var(--text-muted);"
 				>all</button>
 				<button
+					onclick={() => { app.selectedTlds = new Set(POPULAR_TLDS); app.persist(); }}
+					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
+					style="background: var(--bg-tertiary); color: var(--text-muted);"
+				>popular</button>
+				<button
 					onclick={() => { app.selectedTlds = new Set(); app.persist(); }}
 					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
 					style="background: var(--bg-tertiary); color: var(--text-muted);"
 				>none</button>
 			</div>
 		</div>
-		<div class="flex flex-wrap gap-1.5">
-			{#each TLDS as tld}
+
+		<!-- TLD search (shown when expanded or 470+ TLDs) -->
+		<input
+			type="text"
+			placeholder="Search TLDs..."
+			value={tldSearch}
+			oninput={(e) => { tldSearch = (e.target as HTMLInputElement).value; }}
+			class="w-full px-2.5 py-1.5 rounded-md text-xs border-0 mb-1.5"
+			style="background: var(--bg-tertiary); color: var(--text-primary); outline: none;"
+		/>
+
+		<div class="flex flex-wrap gap-1.5" style="max-height: 200px; overflow-y: auto;">
+			{#each visibleTlds() as tld}
 				<button
 					onclick={() => app.toggleTld(tld)}
 					class="chip"
@@ -61,6 +103,21 @@
 				>{tld}</button>
 			{/each}
 		</div>
+
+		<!-- Expand/collapse toggle -->
+		{#if !tldSearch}
+			<button
+				onclick={() => { showAllTlds = !showAllTlds; }}
+				class="text-xs mt-1.5 cursor-pointer border-0 bg-transparent"
+				style="color: var(--accent);"
+			>
+				{#if showAllTlds}
+					Show popular only
+				{:else}
+					Show all {TLDS.length} TLDs{hiddenSelectedCount() > 0 ? ` (${hiddenSelectedCount()} selected hidden)` : ''}
+				{/if}
+			</button>
+		{/if}
 	</div>
 
 	<!-- Mutation selector -->

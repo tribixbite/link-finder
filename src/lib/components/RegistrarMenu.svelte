@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { app } from '$lib/state/app.svelte';
+	import { REGISTRARS, REGISTRAR_IDS } from '$lib/types';
+	import type { RegistrarId } from '$lib/types';
+
 	interface Props {
 		domain: string;
 	}
@@ -7,12 +11,20 @@
 	let open = $state(false);
 	let menuRef = $state<HTMLDivElement | null>(null);
 
-	const registrars = [
-		{ name: 'Namecheap', color: '#fe5803', url: (d: string) => `https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(d)}` },
-		{ name: 'Porkbun', color: '#ef6f9a', url: (d: string) => `https://porkbun.com/checkout/search?q=${encodeURIComponent(d)}` },
-		{ name: 'Cloudflare', color: '#f6821f', url: () => `https://www.cloudflare.com/products/registrar/` },
-		{ name: 'Spaceship', color: '#635bff', url: () => `https://www.spaceship.com/domain-search/` },
-	];
+	/** Extract TLD from domain (e.g. "torch.dev" → ".dev") */
+	function getTld(d: string): string {
+		const dot = d.indexOf('.');
+		return dot >= 0 ? d.slice(dot) : '';
+	}
+
+	/** Registrars that support this domain's TLD */
+	let available = $derived(() => {
+		const tld = getTld(domain);
+		const supported = app.getRegistrarsForTld(tld);
+		// Show all if registrar data hasn't loaded yet
+		if (supported.length === 0 && app.registrarTlds.size === 0) return REGISTRAR_IDS;
+		return supported;
+	});
 
 	function handleClickOutside(e: MouseEvent) {
 		if (menuRef && !menuRef.contains(e.target as Node)) {
@@ -28,6 +40,7 @@
 	});
 </script>
 
+{#if available().length > 0}
 <div class="relative inline-flex" bind:this={menuRef}>
 	<button
 		onclick={(e) => { e.stopPropagation(); open = !open; }}
@@ -46,7 +59,8 @@
 
 	{#if open}
 		<div class="popover" style="right: 0; top: 100%; margin-top: 4px;">
-			{#each registrars as reg}
+			{#each available() as rid}
+				{@const reg = REGISTRARS[rid]}
 				<a
 					href={reg.url(domain)}
 					target="_blank"
@@ -64,3 +78,4 @@
 		</div>
 	{/if}
 </div>
+{/if}

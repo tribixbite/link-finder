@@ -9,8 +9,9 @@ import type {
 	SortField,
 	SortDir,
 	TldPricing,
+	RegistrarId,
 } from '../types';
-import { DEFAULT_TLDS, DEFAULT_MUTATIONS, LIST_COLORS } from '../types';
+import { DEFAULT_TLDS, DEFAULT_MUTATIONS, LIST_COLORS, REGISTRARS } from '../types';
 
 /** Parse terms from user input (comma, newline, or space separated) */
 function parseTerms(input: string): string[] {
@@ -81,9 +82,10 @@ class AppState {
 
 	// --- Filter state (restored from localStorage) ---
 	filters = $state<Filters>((() => {
+		const defaults: Filters = { status: 'all', tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '', hideErrors: false, registrars: new Set<RegistrarId>() };
 		try {
 			const raw = localStorage.getItem(LS + 'filters');
-			if (raw === null) return { status: 'all' as const, tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '', hideErrors: false };
+			if (raw === null) return defaults;
 			const parsed = JSON.parse(raw);
 			return {
 				status: parsed.status || 'all',
@@ -93,14 +95,17 @@ class AppState {
 				lengthMax: parsed.lengthMax ?? 99,
 				search: parsed.search || '',
 				hideErrors: parsed.hideErrors ?? false,
+				registrars: new Set<RegistrarId>(parsed.registrars || []),
 			};
 		} catch {
-			return { status: 'all' as const, tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '', hideErrors: false };
+			return defaults;
 		}
 	})());
 
 	// --- Pricing state (fetched per session, not persisted) ---
 	pricing = $state<Map<string, TldPricing>>(new Map());
+	/** Per-registrar TLD support (fetched with pricing, not persisted) */
+	registrarTlds = $state<Map<RegistrarId, Set<string>>>(new Map());
 
 	// --- Saved domains / lists (restored from localStorage) ---
 	lists = $state<DomainList[]>(safeParse('lists', [] as DomainList[]));
@@ -131,6 +136,7 @@ class AppState {
 				lengthMax: this.filters.lengthMax,
 				search: this.filters.search,
 				hideErrors: this.filters.hideErrors,
+				registrars: [...this.filters.registrars],
 			}));
 			// Serialize results Map (skip 'checking' status entries)
 			const entries = [...this.results.entries()].filter(([, r]) => r.status !== 'checking');
@@ -195,6 +201,18 @@ class AppState {
 			items = items.filter(
 				(r) => r.domain.includes(q) || r.term.includes(q) || r.name.includes(q)
 			);
+		}
+
+		// Registrar filter: only show domains whose TLD is sold by ALL selected registrars
+		if (this.filters.registrars.size > 0) {
+			items = items.filter((r) => {
+				const tldKey = r.tld.startsWith('.') ? r.tld.slice(1) : r.tld;
+				for (const rid of this.filters.registrars) {
+					const supported = this.registrarTlds.get(rid);
+					if (!supported || !supported.has(tldKey)) return false;
+				}
+				return true;
+			});
 		}
 
 		// Sort
@@ -273,7 +291,8 @@ class AppState {
 			this.filters.lengthMin > 0 ||
 			this.filters.lengthMax < 99 ||
 			this.filters.search.length > 0 ||
-			this.filters.hideErrors
+			this.filters.hideErrors ||
+			this.filters.registrars.size > 0
 		);
 	}
 
@@ -329,6 +348,7 @@ class AppState {
 			lengthMax: 99,
 			search: '',
 			hideErrors: false,
+			registrars: new Set(),
 		};
 		this.persist();
 	}
@@ -364,17 +384,27 @@ class AppState {
 
 	// --- Pricing methods ---
 
-	/** Fetch TLD pricing from API and populate the pricing map */
+	/** Fetch TLD pricing + registrar TLD support from API */
 	async fetchPricing() {
 		try {
 			const res = await fetch('/api/pricing');
-			const data = await res.json() as { pricing: Record<string, TldPricing> };
+			const data = await res.json() as {
+				pricing: Record<string, TldPricing>;
+				registrars: Record<string, string[]>;
+			};
 			if (data.pricing) {
 				const map = new Map<string, TldPricing>();
 				for (const [tld, p] of Object.entries(data.pricing)) {
 					map.set(tld, p);
 				}
 				this.pricing = map;
+			}
+			if (data.registrars) {
+				const rmap = new Map<RegistrarId, Set<string>>();
+				for (const [rid, tlds] of Object.entries(data.registrars)) {
+					rmap.set(rid as RegistrarId, new Set(tlds));
+				}
+				this.registrarTlds = rmap;
 			}
 		} catch {
 			// Pricing is optional — silently fail
@@ -386,6 +416,29 @@ class AppState {
 		const key = tld.startsWith('.') ? tld.slice(1) : tld;
 		const entry = this.pricing.get(key);
 		return entry?.registration ?? null;
+	}
+
+	/** Get registrar IDs that support a given TLD (e.g. ".com" → ['namecheap','porkbun','cloudflare','spaceship']) */
+	getRegistrarsForTld(tld: string): RegistrarId[] {
+		const key = tld.startsWith('.') ? tld.slice(1) : tld;
+		const result: RegistrarId[] = [];
+		for (const [rid, tlds] of this.registrarTlds) {
+			if (tlds.has(key)) result.push(rid);
+		}
+		// Porkbun always included (source of pricing data, supports everything they price)
+		if (!result.includes('porkbun') && this.pricing.has(key)) {
+			result.push('porkbun');
+		}
+		return result;
+	}
+
+	/** Toggle a registrar in the result filters */
+	toggleFilterRegistrar(id: RegistrarId) {
+		const next = new Set(this.filters.registrars);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		this.filters = { ...this.filters, registrars: next };
+		this.persist();
 	}
 
 	// --- Saved domain / list CRUD ---

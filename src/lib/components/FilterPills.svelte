@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
-	import { MUTATION_INFO } from '$lib/types';
+	import { MUTATION_INFO, REGISTRARS } from '$lib/types';
 </script>
 
 {#if app.hasActiveFilters}
@@ -39,6 +39,13 @@
 				<button onclick={() => { app.setFilter({ hideErrors: false }); }}>&times;</button>
 			</span>
 		{/if}
+
+		{#each [...app.filters.registrars] as rid}
+			<span class="filter-pill">
+				{REGISTRARS[rid].name}
+				<button onclick={() => app.toggleFilterRegistrar(rid)}>&times;</button>
+			</span>
+		{/each}
 
 		{#if app.filters.search}
 			<span class="filter-pill">
