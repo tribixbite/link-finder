@@ -75,12 +75,12 @@
 			style="border: 1px solid var(--border);"
 		>
 			<button
-				onclick={() => { app.viewMode = 'card'; }}
+				onclick={() => app.setViewMode('card')}
 				class="px-2.5 py-1 text-xs cursor-pointer border-0 transition-colors"
 				style="background: {app.viewMode === 'card' ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {app.viewMode === 'card' ? 'var(--accent)' : 'var(--text-muted)'};"
 			>Cards</button>
 			<button
-				onclick={() => { app.viewMode = 'table'; }}
+				onclick={() => app.setViewMode('table')}
 				class="px-2.5 py-1 text-xs cursor-pointer border-0 transition-colors"
 				style="background: {app.viewMode === 'table' ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {app.viewMode === 'table' ? 'var(--accent)' : 'var(--text-muted)'};"
 			>Table</button>

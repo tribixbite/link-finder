@@ -25,7 +25,8 @@
 		</label>
 		<textarea
 			id="search-terms"
-			bind:value={app.termsInput}
+			value={app.termsInput}
+			oninput={(e) => app.setTermsInput((e.target as HTMLTextAreaElement).value)}
 			onkeydown={handleKeydown}
 			placeholder="torch&#10;sift&#10;beacon&#10;grep"
 			rows="4"
@@ -40,12 +41,12 @@
 			<span class="text-sm font-medium" style="color: var(--text-secondary);">TLDs</span>
 			<div class="flex gap-1">
 				<button
-					onclick={() => { app.selectedTlds = new Set(TLDS); }}
+					onclick={() => { app.selectedTlds = new Set(TLDS); app.persist(); }}
 					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
 					style="background: var(--bg-tertiary); color: var(--text-muted);"
 				>all</button>
 				<button
-					onclick={() => { app.selectedTlds = new Set(); }}
+					onclick={() => { app.selectedTlds = new Set(); app.persist(); }}
 					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
 					style="background: var(--bg-tertiary); color: var(--text-muted);"
 				>none</button>
@@ -68,12 +69,12 @@
 			<span class="text-sm font-medium" style="color: var(--text-secondary);">Mutations</span>
 			<div class="flex gap-1">
 				<button
-					onclick={() => { app.selectedMutations = new Set(allMutations); }}
+					onclick={() => { app.selectedMutations = new Set(allMutations); app.persist(); }}
 					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
 					style="background: var(--bg-tertiary); color: var(--text-muted);"
 				>all</button>
 				<button
-					onclick={() => { app.selectedMutations = new Set(['original']); }}
+					onclick={() => { app.selectedMutations = new Set(['original']); app.persist(); }}
 					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
 					style="background: var(--bg-tertiary); color: var(--text-muted);"
 				>reset</button>

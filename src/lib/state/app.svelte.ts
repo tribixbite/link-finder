@@ -17,32 +17,114 @@ function parseTerms(input: string): string[] {
 		.filter((t) => t.length >= 2);
 }
 
-class AppState {
-	// --- Input state ---
-	termsInput = $state('');
-	selectedTlds = $state<Set<string>>(new Set(DEFAULT_TLDS));
-	selectedMutations = $state<Set<MutationType>>(new Set(DEFAULT_MUTATIONS));
+/** localStorage key prefix */
+const LS = 'digr-';
 
-	// --- Results state ---
-	results = $state<Map<string, DomainResult>>(new Map());
+/**
+ * Module-level operational state — kept outside the class to prevent
+ * Svelte 5's compiler from wrapping them in reactive getters/setters,
+ * which breaks timer callbacks and non-reactive bookkeeping.
+ */
+let _abortController: AbortController | null = null;
+let _pendingUpdates: Array<{ domain: string; records: string[]; status: string; error?: string }> = [];
+let _flushTimer: ReturnType<typeof setTimeout> | null = null;
+let _lastProgress = 0;
+let _persistInputTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Safe JSON parse with fallback */
+function safeParse<T>(key: string, fallback: T): T {
+	try {
+		const raw = localStorage.getItem(LS + key);
+		if (raw === null) return fallback;
+		return JSON.parse(raw) as T;
+	} catch {
+		return fallback;
+	}
+}
+
+/** Restore a Set from localStorage (stored as array) */
+function restoreSet<T>(key: string, fallback: Set<T>): Set<T> {
+	try {
+		const raw = localStorage.getItem(LS + key);
+		if (raw === null) return fallback;
+		return new Set(JSON.parse(raw) as T[]);
+	} catch {
+		return fallback;
+	}
+}
+
+/** Restore results Map from localStorage */
+function restoreResults(): Map<string, DomainResult> {
+	try {
+		const raw = localStorage.getItem(LS + 'results');
+		if (raw === null) return new Map();
+		const entries = JSON.parse(raw) as [string, DomainResult][];
+		return new Map(entries);
+	} catch {
+		return new Map();
+	}
+}
+
+class AppState {
+	// --- Input state (restored from localStorage) ---
+	termsInput = $state(safeParse('termsInput', ''));
+	selectedTlds = $state<Set<string>>(restoreSet('selectedTlds', new Set(DEFAULT_TLDS)));
+	selectedMutations = $state<Set<MutationType>>(restoreSet('selectedMutations', new Set(DEFAULT_MUTATIONS)));
+
+	// --- Results state (restored from localStorage) ---
+	results = $state<Map<string, DomainResult>>(restoreResults());
 	searching = $state(false);
 	progress = $state({ done: 0, total: 0 });
 
-	// --- Filter state ---
-	filters = $state<Filters>({
-		status: 'all',
-		tlds: new Set<string>(),
-		mutations: new Set<MutationType>(),
-		lengthMin: 0,
-		lengthMax: 99,
-		search: '',
-	});
+	// --- Filter state (restored from localStorage) ---
+	filters = $state<Filters>((() => {
+		try {
+			const raw = localStorage.getItem(LS + 'filters');
+			if (raw === null) return { status: 'all' as const, tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '' };
+			const parsed = JSON.parse(raw);
+			return {
+				status: parsed.status || 'all',
+				tlds: new Set<string>(parsed.tlds || []),
+				mutations: new Set<MutationType>(parsed.mutations || []),
+				lengthMin: parsed.lengthMin ?? 0,
+				lengthMax: parsed.lengthMax ?? 99,
+				search: parsed.search || '',
+			};
+		} catch {
+			return { status: 'all' as const, tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '' };
+		}
+	})());
 
-	// --- View state ---
-	sort = $state<{ field: SortField; dir: SortDir }>({ field: 'status', dir: 'asc' });
-	viewMode = $state<'card' | 'table'>('card');
+	// --- View state (restored from localStorage) ---
+	sort = $state<{ field: SortField; dir: SortDir }>(safeParse('sort', { field: 'status' as SortField, dir: 'asc' as SortDir }));
+	viewMode = $state<'card' | 'table'>(safeParse('viewMode', 'card' as const));
 	theme = $state<'dark' | 'light'>('dark');
 	sidebarOpen = $state(false);
+
+	/** Persist current state to localStorage */
+	persist() {
+		try {
+			localStorage.setItem(LS + 'termsInput', JSON.stringify(this.termsInput));
+			localStorage.setItem(LS + 'selectedTlds', JSON.stringify([...this.selectedTlds]));
+			localStorage.setItem(LS + 'selectedMutations', JSON.stringify([...this.selectedMutations]));
+			localStorage.setItem(LS + 'sort', JSON.stringify(this.sort));
+			localStorage.setItem(LS + 'viewMode', JSON.stringify(this.viewMode));
+			// Serialize filters (Sets → arrays)
+			localStorage.setItem(LS + 'filters', JSON.stringify({
+				status: this.filters.status,
+				tlds: [...this.filters.tlds],
+				mutations: [...this.filters.mutations],
+				lengthMin: this.filters.lengthMin,
+				lengthMax: this.filters.lengthMax,
+				search: this.filters.search,
+			}));
+			// Serialize results Map (skip 'checking' status entries)
+			const entries = [...this.results.entries()].filter(([, r]) => r.status !== 'checking');
+			localStorage.setItem(LS + 'results', JSON.stringify(entries));
+		} catch {
+			// localStorage full or unavailable — silently ignore
+		}
+	}
 
 	/** Parsed terms from the input textarea */
 	get terms(): string[] {
@@ -169,6 +251,7 @@ class AppState {
 		if (next.has(tld)) next.delete(tld);
 		else next.add(tld);
 		this.selectedTlds = next;
+		this.persist();
 	}
 
 	/** Toggle a mutation for searching */
@@ -177,6 +260,7 @@ class AppState {
 		if (next.has(m)) next.delete(m);
 		else next.add(m);
 		this.selectedMutations = next;
+		this.persist();
 	}
 
 	/** Toggle a TLD in the result filters */
@@ -185,6 +269,7 @@ class AppState {
 		if (next.has(tld)) next.delete(tld);
 		else next.add(tld);
 		this.filters = { ...this.filters, tlds: next };
+		this.persist();
 	}
 
 	/** Toggle a mutation in the result filters */
@@ -193,11 +278,13 @@ class AppState {
 		if (next.has(m)) next.delete(m);
 		else next.add(m);
 		this.filters = { ...this.filters, mutations: next };
+		this.persist();
 	}
 
 	/** Set status filter */
 	setStatusFilter(status: Filters['status']) {
 		this.filters = { ...this.filters, status };
+		this.persist();
 	}
 
 	/** Clear all result filters */
@@ -210,6 +297,7 @@ class AppState {
 			lengthMax: 99,
 			search: '',
 		};
+		this.persist();
 	}
 
 	/** Toggle sort field (flip direction if same field) */
@@ -219,6 +307,26 @@ class AppState {
 		} else {
 			this.sort = { field, dir: 'asc' };
 		}
+		this.persist();
+	}
+
+	/** Update terms input and persist (debounced) */
+	setTermsInput(value: string) {
+		this.termsInput = value;
+		if (_persistInputTimer) clearTimeout(_persistInputTimer);
+		_persistInputTimer = setTimeout(() => this.persist(), 500);
+	}
+
+	/** Set view mode and persist */
+	setViewMode(mode: 'card' | 'table') {
+		this.viewMode = mode;
+		this.persist();
+	}
+
+	/** Update a filter field and persist (for inline oninput handlers) */
+	setFilter(patch: Partial<Filters>) {
+		this.filters = { ...this.filters, ...patch };
+		this.persist();
 	}
 
 	/** Toggle theme */
@@ -228,28 +336,26 @@ class AppState {
 		localStorage.setItem('digr-theme', this.theme);
 	}
 
-	/** Initialize theme from localStorage */
+	/** Initialize theme from localStorage and bind visibility persistence */
 	initTheme() {
 		const saved = localStorage.getItem('digr-theme') as 'dark' | 'light' | null;
 		if (saved) {
 			this.theme = saved;
 			document.documentElement.setAttribute('data-theme', saved);
 		}
+		// Persist state when user switches away from app (mobile tab switch, home button)
+		document.addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'hidden') this.persist();
+		});
+		// Also persist before unload (desktop tab close / navigate away)
+		window.addEventListener('beforeunload', () => this.persist());
 	}
 
-	/** Abort controller for current search */
-	private abortController: AbortController | null = null;
-
-	/** Pending batch of SSE updates, flushed on a timer to reduce reactive churn */
-	private pendingUpdates: Array<{ domain: string; records: string[]; status: string; error?: string }> = [];
-	private flushTimer: ReturnType<typeof setTimeout> | null = null;
-	private lastProgress = 0;
-
 	/** Flush pending SSE updates into the results map in one batch */
-	private flushUpdates() {
-		if (this.pendingUpdates.length === 0) return;
+	_flushUpdates() {
+		if (_pendingUpdates.length === 0) return;
 		const updated = new Map(this.results);
-		for (const upd of this.pendingUpdates) {
+		for (const upd of _pendingUpdates) {
 			const existing = updated.get(upd.domain);
 			if (existing) {
 				updated.set(upd.domain, {
@@ -262,9 +368,10 @@ class AppState {
 			}
 		}
 		this.results = updated;
-		this.progress = { done: this.lastProgress, total: this.progress.total };
-		this.pendingUpdates = [];
-		this.flushTimer = null;
+		this.progress = { done: _lastProgress, total: this.progress.total };
+		_pendingUpdates = [];
+		_flushTimer = null;
+		this.persist();
 	}
 
 	/** Start domain search using SSE streaming */
@@ -273,9 +380,9 @@ class AppState {
 		if (candidates.length === 0) return;
 
 		// Cancel any existing search
-		this.abortController?.abort();
-		this.abortController = new AbortController();
-		const signal = this.abortController.signal;
+		_abortController?.abort();
+		_abortController = new AbortController();
+		const signal = _abortController.signal;
 
 		// Reset results with 'checking' status
 		const nextResults = new Map<string, DomainResult>();
@@ -285,8 +392,8 @@ class AppState {
 		this.results = nextResults;
 		this.searching = true;
 		this.progress = { done: 0, total: candidates.length };
-		this.pendingUpdates = [];
-		this.lastProgress = 0;
+		_pendingUpdates = [];
+		_lastProgress = 0;
 
 		try {
 			const domains = candidates.map((c) => c.domain);
@@ -314,16 +421,16 @@ class AppState {
 					try {
 						const event = JSON.parse(line.slice(6));
 						if (event.type === 'result') {
-							this.pendingUpdates.push({
+							_pendingUpdates.push({
 								domain: event.domain,
 								records: event.records,
 								status: event.status,
 								error: event.error,
 							});
-							this.lastProgress = event.progress;
+							_lastProgress = event.progress;
 							// Batch flush every 150ms to avoid per-result reactive updates
-							if (!this.flushTimer) {
-								this.flushTimer = setTimeout(() => this.flushUpdates(), 150);
+							if (!_flushTimer) {
+								_flushTimer = setTimeout(() => this._flushUpdates(), 150);
 							}
 						}
 					} catch {
@@ -333,8 +440,8 @@ class AppState {
 			}
 
 			// Flush any remaining buffered updates
-			if (this.flushTimer) clearTimeout(this.flushTimer);
-			this.flushUpdates();
+			if (_flushTimer) clearTimeout(_flushTimer);
+			this._flushUpdates();
 
 			// Process any remaining partial buffer
 			if (buffer.startsWith('data: ')) {
@@ -363,17 +470,19 @@ class AppState {
 			console.error('Search error:', err);
 		} finally {
 			this.searching = false;
-			this.abortController = null;
-			if (this.flushTimer) {
-				clearTimeout(this.flushTimer);
-				this.flushUpdates();
+			_abortController = null;
+			if (_flushTimer) {
+				clearTimeout(_flushTimer);
+				this._flushUpdates();
 			}
+			// Always persist final results
+			this.persist();
 		}
 	}
 
 	/** Cancel current search */
 	cancelSearch() {
-		this.abortController?.abort();
+		_abortController?.abort();
 		this.searching = false;
 	}
 

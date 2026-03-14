@@ -30,7 +30,7 @@
 			type="text"
 			placeholder="Search domains..."
 			value={app.filters.search}
-			oninput={(e) => { app.filters = { ...app.filters, search: (e.target as HTMLInputElement).value }; }}
+			oninput={(e) => app.setFilter({ search: (e.target as HTMLInputElement).value })}
 			class="w-full px-2.5 py-1.5 rounded-md text-xs border-0"
 			style="background: var(--bg-tertiary); color: var(--text-primary); outline: none;"
 		/>
@@ -101,7 +101,7 @@
 				min="0"
 				max="99"
 				value={app.filters.lengthMin}
-				oninput={(e) => { app.filters = { ...app.filters, lengthMin: parseInt((e.target as HTMLInputElement).value) || 0 }; }}
+				oninput={(e) => app.setFilter({ lengthMin: parseInt((e.target as HTMLInputElement).value) || 0 })}
 				class="w-14 px-2 py-1 rounded text-xs text-center border-0"
 				style="background: var(--bg-tertiary); color: var(--text-primary); outline: none;"
 			/>
@@ -111,7 +111,7 @@
 				min="0"
 				max="99"
 				value={app.filters.lengthMax}
-				oninput={(e) => { app.filters = { ...app.filters, lengthMax: parseInt((e.target as HTMLInputElement).value) || 99 }; }}
+				oninput={(e) => app.setFilter({ lengthMax: parseInt((e.target as HTMLInputElement).value) || 99 })}
 				class="w-14 px-2 py-1 rounded text-xs text-center border-0"
 				style="background: var(--bg-tertiary); color: var(--text-primary); outline: none;"
 			/>
