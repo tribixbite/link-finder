@@ -109,6 +109,34 @@ Fetch TLD registration and renewal pricing (sourced from Porkbun public API).
 
 ---
 
+### GET /api/whois
+
+Fetch detailed whois data for a single domain.
+
+**Query Parameters:**
+- `domain` (required) — must match valid domain pattern
+
+**Response:**
+```json
+{
+  "domain": "torch.dev",
+  "raw": "Domain Name: torch.dev\nRegistrar: ...",
+  "parsed": {
+    "registrar": "Google LLC",
+    "created": "2019-03-01T00:00:00Z",
+    "expires": "2026-03-01T00:00:00Z",
+    "updated": "2025-02-15T00:00:00Z",
+    "nameservers": ["ns1.example.com", "ns2.example.com"],
+    "status": ["clientTransferProhibited"]
+  },
+  "fetchedAt": 1710400000000
+}
+```
+
+**Rate Limiting:** Uses the same whois semaphore (4 concurrent) and per-TLD cooldown (500ms).
+
+---
+
 ### GET /api/health
 
 Health check endpoint.
@@ -178,3 +206,20 @@ All error responses use standard JSON format:
 |--------|-----------|
 | 400 | Missing `domains` array or no valid domains |
 | 404 | Unknown endpoint |
+| 429 | Per-IP rate limit exceeded (100 req/min) |
+
+## Per-IP Rate Limiting
+
+All `/api/*` routes except `/api/health` are rate-limited to **100 requests per minute per IP**. The IP is read from `X-Forwarded-For` (first entry) or `X-Real-IP` headers, falling back to `'unknown'`.
+
+Rate limit entries are cleaned up every 2 minutes. When exceeded, the server returns:
+```json
+{ "error": "Rate limit exceeded. Try again later." }
+```
+
+## Production Static Serving
+
+When `NODE_ENV=production`, the API server also serves static files from `build/`:
+- Hashed assets (`.js`, `.css`, etc.) get `Cache-Control: public, max-age=31536000, immutable`
+- Non-file routes fall back to `index.html` (SPA routing)
+- Configure via `CORS_ORIGIN` env var for cross-origin requests

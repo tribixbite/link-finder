@@ -201,3 +201,40 @@ Unified notification system for copy, export, import, recheck actions. Auto-dism
 - Sidebar collapses to overlay on mobile
 - Card grid: 1 column mobile, 2 columns tablet+
 - Touch-friendly sizing
+
+## Phase 3 Features
+
+### Search History
+Clock icon next to the Dig button opens a dropdown of recent searches (up to 50). Each entry shows terms, TLD count, mutation count, result count, and relative time. Click to restore, × to delete. Deduped by terms+tlds+mutations fingerprint.
+
+**Files:** `SearchHistory.svelte`, `app.svelte.ts:saveToHistory(), restoreFromHistory()`
+
+### Custom Mutations
+User-defined `{term}` patterns (e.g. `{term}hub`, `go{term}`). Shown as an inline editor in SearchInput when the "custom" mutation chip is selected. Patterns must contain `{term}` and produce valid domain characters.
+
+**Files:** `CustomMutationEditor.svelte`, `mutations.ts:generateCandidates()`, `app.svelte.ts:customMutations`
+
+### Whois Detail Panel
+Slide-in panel from right showing parsed whois data for taken/reserved domains. Fields: registrar, creation/expiry/update dates, nameservers, status. Collapsible raw whois text block. Triggered by "WH" button on domain cards/table rows.
+
+**Files:** `WhoisPanel.svelte`, `api-server.ts:/api/whois`, `app.svelte.ts:openWhois()`
+
+### Bulk Actions
+Checkbox selection on domain cards and table rows. Shift-click for range selection. Select-all checkbox in table header. Fixed bottom bar appears when selection is active with: count display, Save to list (dropdown), Copy to clipboard, Deselect all.
+
+**Files:** `BulkActionBar.svelte`, `DomainCard.svelte`, `DomainTable.svelte`, `app.svelte.ts:selectedDomains`
+
+### Domain Monitoring
+Track domains for status changes over time. Eye icon on domain cards toggles monitoring. Slide-in panel from header shows tracked domains with current status, last checked time, and status history timeline. Configurable check interval (1h, 6h, 24h). Toast notification on status changes.
+
+**Files:** `MonitorPanel.svelte`, `Header.svelte`, `app.svelte.ts:monitorEntries, runMonitorCheck()`
+
+### PWA Support
+Progressive Web App with offline capability. Includes `manifest.json`, app icons (192px, 512px), service worker with cache-first strategy for static assets and network-first for API calls. Install prompt shown when browser triggers `beforeinstallprompt`.
+
+**Files:** `static/manifest.json`, `static/sw.js`, `static/icons/`, `app.html`, `app.svelte.ts:registerSW()`
+
+### Deploy Architecture
+Production-ready deployment: multi-stage Dockerfile (bun + dig + whois), docker-compose.yml, deploy script. API server serves static files in production mode. Per-IP rate limiting (100 req/min). Configurable CORS origin and port via env vars.
+
+**Files:** `Dockerfile`, `docker-compose.yml`, `scripts/deploy.sh`, `api-server.ts`

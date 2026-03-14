@@ -1,0 +1,10 @@
+services:
+  digr:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - CORS_ORIGIN=*
+    restart: unless-stopped

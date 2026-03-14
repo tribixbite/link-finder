@@ -32,14 +32,15 @@ digr is a domain availability search tool that generates name candidates from us
 │  Bun API Server (port 3001)                 │
 │  ┌──────────────┐  ┌─────────────────────┐  │
 │  │ POST /stream │  │ GET /pricing        │  │
-│  │ POST /check  │  │ GET /health         │  │
+│  │ POST /check  │  │ GET /whois          │  │
+│  │              │  │ GET /health         │  │
 │  └──────┬───────┘  └─────────────────────┘  │
 │         │                                    │
 │  ┌──────▼───────┐  ┌─────────────────────┐  │
 │  │   dig DNS    │  │   whois verify      │  │
 │  │ (12 conc.)   │  │   (4 conc.)         │  │
 │  └──────────────┘  └─────────────────────┘  │
-│  Request dedup · 15min cache · per-TLD rate │
+│  Dedup · 15min cache · rate limit · per-TLD │
 └─────────────────────────────────────────────┘
 ```
 
@@ -50,17 +51,19 @@ digr is a domain availability search tool that generates name candidates from us
 | SvelteKit dev | 5173 | Serves UI, proxies `/api` to 3001 |
 | Bun API server | 3001 | Domain checks (dig+whois), pricing |
 
-In production, the SvelteKit build outputs static files served by any web server, while the API server runs separately.
+In production, the API server can serve static files directly (`NODE_ENV=production`) or be paired with a reverse proxy. Docker deployment available via `Dockerfile` and `docker-compose.yml`.
 
 ## Component Hierarchy
 
 ```
 +page.svelte
 ├── Header.svelte
-│   └── theme toggle, saved panel toggle
+│   └── theme toggle, monitor panel toggle, saved panel toggle
 ├── SearchInput.svelte
 │   ├── terms textarea, TLD chips, mutation chips
 │   ├── TLD presets (Cheap / Dev / ccTLDs)
+│   ├── SearchHistory.svelte (recent searches dropdown)
+│   ├── CustomMutationEditor.svelte ({term} pattern editor)
 │   └── Dig button, candidate count
 ├── ResultToolbar.svelte
 │   └── sort, view toggle, status tabs, counters
@@ -69,10 +72,17 @@ In production, the SvelteKit build outputs static files served by any web server
 ├── FilterSidebar.svelte
 │   └── TLD filter chips, mutation filter chips, length range, registrar filter
 ├── DomainCard.svelte / DomainTable.svelte
-│   ├── status icon, domain name, copy button
+│   ├── bulk selection checkbox, status icon, domain name, copy button
 │   ├── RegistrarMenu.svelte (available domains)
 │   ├── SaveBookmarkButton.svelte
+│   ├── whois detail button, monitor toggle
 │   └── meta: term, mutation label, length, price, age
+├── WhoisPanel.svelte
+│   └── slide-in panel with parsed whois data
+├── BulkActionBar.svelte
+│   └── fixed bottom bar: save to list, copy, deselect
+├── MonitorPanel.svelte
+│   └── slide-in panel: tracked domains, interval config, status timeline
 ├── SavedPanel.svelte
 │   └── lists CRUD, saved domains, import/export
 └── Toast.svelte
@@ -92,6 +102,11 @@ Central reactive store using Svelte 5 runes:
 | Filters | `filters` (status, tlds, mutations, length, search, registrars) | localStorage |
 | Pricing | `pricing` (Map), `registrarTlds` (Map) | session only |
 | Saved | `lists`, `saved`, `savedViewOpen`, `savedFilterListId` | localStorage |
+| History | `searchHistory` (50 max) | localStorage |
+| Custom | `customMutations` | localStorage |
+| Whois | `whoisPanel` (domain, loading, data, error) | session only |
+| Selection | `selectedDomains` (Set) | session only |
+| Monitor | `monitorEntries`, `monitorConfig` | localStorage |
 | View | `sort`, `viewMode`, `theme`, `sidebarOpen` | localStorage |
 
 ### Module-Level Variables
@@ -101,6 +116,7 @@ Timers and AbortControllers are kept outside the class to avoid Svelte 5's react
 - `_abortController` — SSE cancellation
 - `_pendingUpdates`, `_flushTimer` — 150ms batched result updates
 - `_persistInputTimer` — debounced input persistence
+- `_monitorTimer` — periodic domain monitoring interval
 
 ### Toast Store (`src/lib/state/toasts.svelte.ts`)
 
@@ -149,6 +165,10 @@ All keys prefixed with `digr-`. Schema version tracked at `digr-schema-version`.
 | `digr-saved` | SavedDomain[] | Saved domain entries |
 | `digr-schema-version` | number | Migration version (current: 1) |
 | `digr-theme` | string | `'dark'` or `'light'` |
+| `digr-history` | SearchHistoryEntry[] | Recent searches (max 50) |
+| `digr-custom-mutations` | CustomMutation[] | User-defined {term} patterns |
+| `digr-monitor-entries` | MonitorEntry[] | Tracked domains with status history |
+| `digr-monitor-config` | MonitorConfig | Monitoring enabled flag + interval |
 
 ## URL State Sharing
 

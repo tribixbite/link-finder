@@ -22,6 +22,7 @@ Mutations transform user search terms into creative domain name candidates. The 
 | `doubleLastLetter` | Double last | Repeat final consonant | `dig` → `digg`, `spec` → `specc` |
 | `domainHack` | Domain hack | TLD forms word ending | `delicious` → `delicio.us` |
 | `compound` | Compound | Combine term pairs | `torch`+`light` → `torchlight` |
+| `custom` | Custom | User-defined `{term}` patterns | pattern `{term}hub` → `torchhub` |
 
 ## Pluralization Rules
 
@@ -63,14 +64,28 @@ For terms `[torch, light]` and TLD `.dev`:
 
 Each pair is directional — both orderings are generated.
 
+## Custom Mutations
+
+Users can define their own patterns using `{term}` as a placeholder. Patterns are stored in localStorage and applied during candidate generation.
+
+**Pattern format:** Any string containing `{term}`, e.g.:
+- `{term}hub` → `torchhub`
+- `go{term}` → `gotorch`
+- `{term}ai` → `torchai`
+
+**Validation:** Pattern must contain `{term}` and produce valid domain characters (a-z, 0-9, hyphens). Minimum 2 characters after substitution.
+
+**Files:** `CustomMutationEditor.svelte`, `app.svelte.ts:customMutations`
+
 ## Candidate Generation Algorithm
 
-`generateCandidates(terms, mutations, tlds)`:
+`generateCandidates(terms, mutations, tlds, customMutations?)`:
 
 1. Clean terms: lowercase, strip non-alphanumeric, require length ≥ 2
 2. **Compound pass** (if enabled, 2+ terms): all ordered term pairs × all TLDs
-3. **Standard pass** per term:
-   - Skip `compound` (already handled)
+3. **Custom pass** (if enabled): apply each custom mutation pattern per term × TLD
+4. **Standard pass** per term:
+   - Skip `compound` and `custom` (already handled)
    - For `domainHack`: call `findDomainHacks()` which pairs its own TLDs
    - For others: `applyMutation(term, type)` → if non-null, combine with each TLD
 4. Deduplicate by full domain name (e.g., if `original` and another mutation produce the same string)

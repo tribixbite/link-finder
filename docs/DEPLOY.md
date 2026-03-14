@@ -89,14 +89,34 @@ server {
 }
 ```
 
-### Option 2: Docker
+### Option 2: Single-Process (Production Mode)
+
+The API server can serve both static files and the API in one process:
+
+```bash
+bun run build
+NODE_ENV=production PORT=3001 CORS_ORIGIN=https://digr.example.com bun scripts/api-server.ts
+```
+
+Static assets get aggressive caching (`max-age=31536000, immutable`). Non-file routes fall back to `index.html` for SPA routing.
+
+### Option 3: Docker
 
 ```bash
 docker build -t digr .
 docker run -p 3001:3001 digr
 ```
 
-See `Dockerfile` and `docker-compose.yml` for details.
+Or with docker-compose:
+```bash
+docker compose up -d
+```
+
+The Dockerfile uses a multi-stage build:
+1. **Builder stage** — installs deps and builds static frontend with bun
+2. **Runtime stage** — Alpine-based bun image with `dig` (bind-tools) and `whois` installed
+
+The container runs in production mode, serving both static files and the API on port 3001.
 
 ## Environment Variables
 

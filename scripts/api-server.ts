@@ -9,8 +9,13 @@
  * Listens on port 3001 (proxied by Vite dev server at /api)
  */
 
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const STATIC_DIR = IS_PRODUCTION ? new URL('../build', import.meta.url).pathname : null;
 const MAX_CONCURRENT_DIG = 12;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 100; // requests per window per IP
 const MAX_CONCURRENT_WHOIS = 4; // whois servers rate-limit aggressively
 const DIG_TIMEOUT_MS = 5000;
 const WHOIS_TIMEOUT_MS = 8000;
@@ -64,6 +69,28 @@ const WHOIS_REGISTERED_PATTERNS = [
 	/registered on:/i,
 	/created:/i,
 ];
+
+// --- Per-IP rate limiting ---
+const _rateLimits = new Map<string, { count: number; resetAt: number }>();
+
+function isRateLimited(ip: string): boolean {
+	const now = Date.now();
+	const entry = _rateLimits.get(ip);
+	if (!entry || now > entry.resetAt) {
+		_rateLimits.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+		return false;
+	}
+	entry.count++;
+	return entry.count > RATE_LIMIT_MAX;
+}
+
+// Clean up rate limit entries every 2 minutes
+setInterval(() => {
+	const now = Date.now();
+	for (const [ip, entry] of _rateLimits) {
+		if (now > entry.resetAt) _rateLimits.delete(ip);
+	}
+}, 2 * 60 * 1000);
 
 // --- Request dedup: coalesce concurrent checks for the same domain ---
 const _pendingChecks = new Map<string, Promise<DomainCheckResult>>();
@@ -627,13 +654,26 @@ Bun.serve({
 	async fetch(req) {
 		const url = new URL(req.url);
 		const corsHeaders = {
-			'Access-Control-Allow-Origin': '*',
+			'Access-Control-Allow-Origin': CORS_ORIGIN,
 			'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
 			'Access-Control-Allow-Headers': 'Content-Type',
 		};
 
 		if (req.method === 'OPTIONS') {
 			return new Response(null, { status: 204, headers: corsHeaders });
+		}
+
+		// Rate limiting for API routes
+		if (url.pathname.startsWith('/api/') && url.pathname !== '/api/health') {
+			const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+				|| req.headers.get('x-real-ip')
+				|| 'unknown';
+			if (isRateLimited(ip)) {
+				return Response.json(
+					{ error: 'Rate limit exceeded. Try again later.' },
+					{ status: 429, headers: corsHeaders },
+				);
+			}
 		}
 
 		if (url.pathname === '/api/health') {
@@ -677,11 +717,32 @@ Bun.serve({
 			return handleStream(domains, req.signal);
 		}
 
+		// Production: serve static files from build/ directory
+		if (IS_PRODUCTION && STATIC_DIR) {
+			const filePath = url.pathname === '/' ? '/index.html' : url.pathname;
+			const file = Bun.file(`${STATIC_DIR}${filePath}`);
+			if (await file.exists()) {
+				return new Response(file, {
+					headers: { ...corsHeaders, 'Cache-Control': filePath.includes('.') ? 'public, max-age=31536000, immutable' : 'no-cache' },
+				});
+			}
+			// SPA fallback: serve index.html for non-file routes
+			if (!filePath.includes('.')) {
+				const index = Bun.file(`${STATIC_DIR}/index.html`);
+				if (await index.exists()) {
+					return new Response(index, { headers: { ...corsHeaders, 'Content-Type': 'text/html', 'Cache-Control': 'no-cache' } });
+				}
+			}
+		}
+
 		return Response.json({ error: 'not found' }, { status: 404, headers: corsHeaders });
 	},
 });
 
 console.log(`digr API server running on http://localhost:${PORT}`);
+console.log(`  Mode: ${IS_PRODUCTION ? 'production' : 'development'}`);
+if (IS_PRODUCTION) console.log(`  Static: serving from ${STATIC_DIR}`);
+console.log(`  CORS:  ${CORS_ORIGIN}`);
 console.log(`  POST /api/check   — batch domain check (dig + whois)`);
 console.log(`  POST /api/stream  — SSE streaming check`);
 console.log(`  GET  /api/whois   — whois detail lookup`);
