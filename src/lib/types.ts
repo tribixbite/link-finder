@@ -43,7 +43,8 @@ export type MutationType =
 	| 'plural'
 	| 'doubleLastLetter'
 	| 'domainHack'
-	| 'compound';
+	| 'compound'
+	| 'custom';
 
 /** Display metadata for each mutation type */
 export const MUTATION_INFO: Record<MutationType, { label: string; description: string; example: string }> = {
@@ -59,6 +60,7 @@ export const MUTATION_INFO: Record<MutationType, { label: string; description: s
 	doubleLastLetter: { label: 'Double last',     description: 'Double final consonant',   example: 'digg → specc' },
 	domainHack:       { label: 'Domain hack',     description: 'TLD forms word ending',    example: 'del.icio.us' },
 	compound:         { label: 'Compound',        description: 'Combine term pairs',       example: 'torchlight' },
+	custom:           { label: 'Custom',          description: 'User-defined patterns',    example: '{term}hub' },
 };
 
 /** Registrar identifiers */
@@ -234,6 +236,54 @@ export const TLD_PRESETS: TldPreset[] = [
 		tlds: ['.co', '.io', '.me', '.us', '.cc', '.to', '.in', '.is', '.it', '.ly', '.so', '.sh', '.fm', '.tv', '.gg', '.im', '.ai'],
 	},
 ];
+
+/** Search history entry — persisted to localStorage */
+export interface SearchHistoryEntry {
+	id: string;
+	terms: string;
+	tlds: string[];
+	mutations: MutationType[];
+	timestamp: number;
+	resultCount: number;
+}
+
+/** User-defined custom mutation pattern (e.g. "{term}hub", "go{term}") */
+export interface CustomMutation {
+	id: string;
+	label: string;
+	/** Pattern with {term} placeholder, e.g. "{term}hub" */
+	pattern: string;
+}
+
+/** Whois detail data returned from /api/whois */
+export interface WhoisData {
+	domain: string;
+	raw: string;
+	parsed: {
+		registrar?: string;
+		created?: string;
+		expires?: string;
+		updated?: string;
+		nameservers?: string[];
+		status?: string[];
+	};
+	fetchedAt: number;
+}
+
+/** Domain monitoring entry — tracks status changes over time */
+export interface MonitorEntry {
+	domain: string;
+	status: DomainResult['status'];
+	lastChecked: number;
+	history: { status: string; checkedAt: number }[];
+}
+
+/** Domain monitoring configuration */
+export interface MonitorConfig {
+	enabled: boolean;
+	/** Interval in minutes: 60, 360, or 1440 */
+	intervalMinutes: number;
+}
 
 /** Preset colors for domain lists */
 export const LIST_COLORS = [

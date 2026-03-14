@@ -2,11 +2,14 @@
 	import { app } from '$lib/state/app.svelte';
 	import { TLDS, POPULAR_TLDS, MUTATION_INFO, TLD_PRESETS } from '$lib/types';
 	import type { MutationType } from '$lib/types';
+	import SearchHistory from './SearchHistory.svelte';
+	import CustomMutationEditor from './CustomMutationEditor.svelte';
 
 	const allMutations = Object.keys(MUTATION_INFO) as MutationType[];
 
 	let showAllTlds = $state(false);
 	let tldSearch = $state('');
+	let historyOpen = $state(false);
 
 	/** TLDs to display based on search + expand state */
 	let visibleTlds = $derived(() => {
@@ -182,6 +185,17 @@
 			</button>
 		{/if}
 
+		<!-- History toggle -->
+		{#if app.searchHistory.length > 0}
+			<button
+				onclick={() => { historyOpen = !historyOpen; }}
+				class="w-9 h-9 rounded-lg flex items-center justify-center border-0 cursor-pointer shrink-0"
+				style="background: {historyOpen ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {historyOpen ? 'var(--accent)' : 'var(--text-muted)'};"
+				title="Search history ({app.searchHistory.length})"
+				aria-label="Search history"
+			>&#x1F552;</button>
+		{/if}
+
 		{#if app.terms.length > 0}
 			<span class="text-xs tabular-nums" style="color: var(--text-muted);">
 				{app.terms.length} term{app.terms.length !== 1 ? 's' : ''} &times;
@@ -190,6 +204,16 @@
 			</span>
 		{/if}
 	</div>
+
+	<!-- Search history dropdown -->
+	{#if historyOpen}
+		<SearchHistory onclose={() => { historyOpen = false; }} />
+	{/if}
+
+	<!-- Custom mutation editor -->
+	{#if app.selectedMutations.has('custom')}
+		<CustomMutationEditor />
+	{/if}
 
 	<!-- Progress bar -->
 	{#if app.searching}

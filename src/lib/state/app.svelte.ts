@@ -12,6 +12,11 @@ import type {
 	SortDir,
 	TldPricing,
 	RegistrarId,
+	SearchHistoryEntry,
+	CustomMutation,
+	WhoisData,
+	MonitorEntry,
+	MonitorConfig,
 } from '../types';
 import { DEFAULT_TLDS, DEFAULT_MUTATIONS, LIST_COLORS, REGISTRARS } from '../types';
 
@@ -42,6 +47,10 @@ let _pendingUpdates: Array<{ domain: string; records: string[]; status: string; 
 let _flushTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastProgress = 0;
 let _persistInputTimer: ReturnType<typeof setTimeout> | null = null;
+let _monitorTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Max search history entries */
+const MAX_HISTORY = 50;
 
 /** Run any needed schema migrations based on stored version */
 function runMigrations(): void {
@@ -135,6 +144,25 @@ class AppState {
 	theme = $state<'dark' | 'light'>('dark');
 	sidebarOpen = $state(false);
 
+	// --- Search history (restored from localStorage) ---
+	searchHistory = $state<SearchHistoryEntry[]>(safeParse('history', [] as SearchHistoryEntry[]));
+
+	// --- Custom mutations (restored from localStorage) ---
+	customMutations = $state<CustomMutation[]>(safeParse('custom-mutations', [] as CustomMutation[]));
+
+	// --- Whois detail panel ---
+	whoisPanel = $state<{ domain: string; loading: boolean; data: WhoisData | null; error: string | null }>({
+		domain: '', loading: false, data: null, error: null,
+	});
+
+	// --- Bulk selection ---
+	selectedDomains = $state<Set<string>>(new Set());
+
+	// --- Domain monitoring (restored from localStorage) ---
+	monitorEntries = $state<MonitorEntry[]>(safeParse('monitor-entries', [] as MonitorEntry[]));
+	monitorConfig = $state<MonitorConfig>(safeParse('monitor-config', { enabled: false, intervalMinutes: 1440 }));
+	monitorPanelOpen = $state(false);
+
 	/** Persist current state to localStorage */
 	persist() {
 		try {
@@ -164,6 +192,13 @@ class AppState {
 			// Persist saved domains and lists
 			localStorage.setItem(LS + 'lists', JSON.stringify(this.lists));
 			localStorage.setItem(LS + 'saved', JSON.stringify(this.saved));
+			// Persist search history
+			localStorage.setItem(LS + 'history', JSON.stringify(this.searchHistory));
+			// Persist custom mutations
+			localStorage.setItem(LS + 'custom-mutations', JSON.stringify(this.customMutations));
+			// Persist monitoring state
+			localStorage.setItem(LS + 'monitor-entries', JSON.stringify(this.monitorEntries));
+			localStorage.setItem(LS + 'monitor-config', JSON.stringify(this.monitorConfig));
 		} catch {
 			// localStorage full or unavailable — silently ignore
 		}
@@ -176,7 +211,7 @@ class AppState {
 
 	/** Generate candidates from current input state (preview before searching) */
 	get candidates(): DomainCandidate[] {
-		return generateCandidates(this.terms, this.selectedMutations, this.selectedTlds);
+		return generateCandidates(this.terms, this.selectedMutations, this.selectedTlds, this.customMutations);
 	}
 
 	/** All results as array, with active filters applied */
@@ -801,6 +836,265 @@ class AppState {
 		this.persist();
 	}
 
+	// --- Search history methods ---
+
+	/** Save current search config to history (called after search completes) */
+	saveToHistory() {
+		if (!this.termsInput.trim()) return;
+		// Deduplicate by fingerprint (terms + tlds + mutations)
+		const fingerprint = JSON.stringify({
+			terms: this.termsInput.trim(),
+			tlds: [...this.selectedTlds].sort(),
+			mutations: [...this.selectedMutations].sort(),
+		});
+		const existing = this.searchHistory.findIndex((h) => {
+			const fp = JSON.stringify({
+				terms: h.terms,
+				tlds: [...h.tlds].sort(),
+				mutations: [...h.mutations].sort(),
+			});
+			return fp === fingerprint;
+		});
+		const entry: SearchHistoryEntry = {
+			id: crypto.randomUUID(),
+			terms: this.termsInput.trim(),
+			tlds: [...this.selectedTlds],
+			mutations: [...this.selectedMutations],
+			timestamp: Date.now(),
+			resultCount: this.results.size,
+		};
+		let history = [...this.searchHistory];
+		if (existing >= 0) history.splice(existing, 1); // remove old duplicate
+		history.unshift(entry); // add to front
+		if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
+		this.searchHistory = history;
+		this.persist();
+	}
+
+	/** Restore search config from a history entry */
+	restoreFromHistory(entry: SearchHistoryEntry) {
+		this.setTermsInput(entry.terms);
+		this.selectedTlds = new Set(entry.tlds);
+		this.selectedMutations = new Set(entry.mutations as MutationType[]);
+		this.persist();
+	}
+
+	/** Delete a history entry */
+	deleteHistoryEntry(id: string) {
+		this.searchHistory = this.searchHistory.filter((h) => h.id !== id);
+		this.persist();
+	}
+
+	/** Clear all history */
+	clearHistory() {
+		this.searchHistory = [];
+		this.persist();
+	}
+
+	// --- Custom mutation methods ---
+
+	/** Add a custom mutation pattern */
+	addCustomMutation(label: string, pattern: string) {
+		if (!pattern.includes('{term}')) return;
+		const cm: CustomMutation = {
+			id: crypto.randomUUID(),
+			label: label || pattern,
+			pattern: pattern.toLowerCase(),
+		};
+		this.customMutations = [...this.customMutations, cm];
+		this.persist();
+	}
+
+	/** Remove a custom mutation */
+	removeCustomMutation(id: string) {
+		this.customMutations = this.customMutations.filter((m) => m.id !== id);
+		this.persist();
+	}
+
+	// --- Whois detail panel ---
+
+	/** Open whois detail panel for a domain */
+	async openWhois(domain: string) {
+		this.whoisPanel = { domain, loading: true, data: null, error: null };
+		try {
+			const res = await fetch(`/api/whois?domain=${encodeURIComponent(domain)}`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const data = await res.json() as WhoisData;
+			this.whoisPanel = { domain, loading: false, data, error: null };
+		} catch (err) {
+			this.whoisPanel = {
+				domain,
+				loading: false,
+				data: null,
+				error: err instanceof Error ? err.message : 'Whois lookup failed',
+			};
+		}
+	}
+
+	/** Close whois panel */
+	closeWhois() {
+		this.whoisPanel = { domain: '', loading: false, data: null, error: null };
+	}
+
+	// --- Bulk selection ---
+
+	/** Toggle domain selection */
+	toggleSelect(domain: string) {
+		const next = new Set(this.selectedDomains);
+		if (next.has(domain)) next.delete(domain);
+		else next.add(domain);
+		this.selectedDomains = next;
+	}
+
+	/** Select/deselect all visible domains */
+	toggleSelectAll() {
+		if (this.selectedDomains.size > 0) {
+			this.selectedDomains = new Set();
+		} else {
+			this.selectedDomains = new Set(this.filteredResults.map((r) => r.domain));
+		}
+	}
+
+	/** Clear selection */
+	clearSelection() {
+		this.selectedDomains = new Set();
+	}
+
+	/** Select range of domains (for shift-click) */
+	selectRange(fromDomain: string, toDomain: string) {
+		const domains = this.filteredResults.map((r) => r.domain);
+		const fromIdx = domains.indexOf(fromDomain);
+		const toIdx = domains.indexOf(toDomain);
+		if (fromIdx < 0 || toIdx < 0) return;
+		const [start, end] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+		const next = new Set(this.selectedDomains);
+		for (let i = start; i <= end; i++) next.add(domains[i]);
+		this.selectedDomains = next;
+	}
+
+	/** Save all selected domains to a list */
+	bulkSave(listId: string) {
+		let count = 0;
+		for (const domain of this.selectedDomains) {
+			const result = this.results.get(domain);
+			if (result && result.status !== 'checking') {
+				const status = result.status === 'error' ? 'taken' : result.status;
+				if (!this.saved.some((s) => s.domain === domain && s.listId === listId)) {
+					this.saved = [...this.saved, { domain, listId, status, addedAt: Date.now() }];
+					count++;
+				}
+			}
+		}
+		if (count > 0) {
+			toasts.success(`Saved ${count} domains to list`);
+			this.persist();
+		}
+	}
+
+	/** Copy selected domains to clipboard */
+	async bulkCopy() {
+		const text = [...this.selectedDomains].join('\n');
+		try {
+			await navigator.clipboard.writeText(text);
+			toasts.success(`Copied ${this.selectedDomains.size} domains`);
+		} catch { /* clipboard unavailable */ }
+	}
+
+	// --- Domain monitoring ---
+
+	/** Add domain to monitoring */
+	addToMonitor(domain: string) {
+		if (this.monitorEntries.some((e) => e.domain === domain)) return;
+		const result = this.results.get(domain);
+		const entry: MonitorEntry = {
+			domain,
+			status: result?.status ?? 'error',
+			lastChecked: Date.now(),
+			history: [{ status: result?.status ?? 'unknown', checkedAt: Date.now() }],
+		};
+		this.monitorEntries = [...this.monitorEntries, entry];
+		this.persist();
+		toasts.info(`Monitoring ${domain}`);
+	}
+
+	/** Remove domain from monitoring */
+	removeFromMonitor(domain: string) {
+		this.monitorEntries = this.monitorEntries.filter((e) => e.domain !== domain);
+		this.persist();
+	}
+
+	/** Check if domain is being monitored */
+	isMonitored(domain: string): boolean {
+		return this.monitorEntries.some((e) => e.domain === domain);
+	}
+
+	/** Run a check on all monitored domains */
+	async runMonitorCheck() {
+		if (this.monitorEntries.length === 0) return;
+		const domains = this.monitorEntries.map((e) => e.domain);
+		try {
+			const res = await fetch('/api/check', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ domains }),
+			});
+			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string }> };
+			if (!data.results) return;
+			let changed = 0;
+			const next = [...this.monitorEntries];
+			for (const r of data.results) {
+				const idx = next.findIndex((e) => e.domain === r.domain);
+				if (idx < 0) continue;
+				const entry = next[idx];
+				const newStatus = r.status as MonitorEntry['status'];
+				if (entry.status !== newStatus) changed++;
+				next[idx] = {
+					...entry,
+					status: newStatus,
+					lastChecked: Date.now(),
+					history: [...entry.history, { status: newStatus, checkedAt: Date.now() }].slice(-20),
+				};
+			}
+			this.monitorEntries = next;
+			this.persist();
+			if (changed > 0) {
+				toasts.success(`Monitor: ${changed} domain${changed > 1 ? 's' : ''} changed status`);
+			}
+		} catch {
+			// Silently fail — will retry next interval
+		}
+	}
+
+	/** Start periodic monitoring */
+	startMonitoring() {
+		this.stopMonitoring();
+		this.monitorConfig = { ...this.monitorConfig, enabled: true };
+		this.persist();
+		const intervalMs = this.monitorConfig.intervalMinutes * 60 * 1000;
+		_monitorTimer = setInterval(() => this.runMonitorCheck(), intervalMs);
+		// Run immediately on start
+		this.runMonitorCheck();
+	}
+
+	/** Stop periodic monitoring */
+	stopMonitoring() {
+		this.monitorConfig = { ...this.monitorConfig, enabled: false };
+		this.persist();
+		if (_monitorTimer) {
+			clearInterval(_monitorTimer);
+			_monitorTimer = null;
+		}
+	}
+
+	/** Set monitoring interval and restart if enabled */
+	setMonitorInterval(minutes: number) {
+		this.monitorConfig = { ...this.monitorConfig, intervalMinutes: minutes };
+		this.persist();
+		if (this.monitorConfig.enabled) {
+			this.startMonitoring(); // restart with new interval
+		}
+	}
+
 	/** Toggle theme */
 	toggleTheme() {
 		this.theme = this.theme === 'dark' ? 'light' : 'dark';
@@ -830,6 +1124,11 @@ class AppState {
 		});
 		// Also persist before unload (desktop tab close / navigate away)
 		window.addEventListener('beforeunload', () => this.persist());
+		// Resume monitoring if it was enabled
+		if (this.monitorConfig.enabled && this.monitorEntries.length > 0) {
+			const intervalMs = this.monitorConfig.intervalMinutes * 60 * 1000;
+			_monitorTimer = setInterval(() => this.runMonitorCheck(), intervalMs);
+		}
 	}
 
 	/** Flush pending SSE updates into the results map in one batch */
@@ -958,6 +1257,8 @@ class AppState {
 			}
 			// Always persist final results
 			this.persist();
+			// Save to search history
+			this.saveToHistory();
 		}
 	}
 

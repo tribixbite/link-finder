@@ -1,4 +1,4 @@
-import type { DomainCandidate, MutationType } from './types';
+import type { DomainCandidate, MutationType, CustomMutation } from './types';
 
 const VOWELS = new Set(['a', 'e', 'i', 'o', 'u']);
 
@@ -132,6 +132,7 @@ function applyMutation(word: string, mutation: MutationType): string | null {
 		case 'doubleLastLetter': return doubleLastLetter(word);
 		case 'domainHack': return null; // handled separately
 		case 'compound': return null; // handled separately in generateCandidates
+		case 'custom': return null; // handled separately in generateCandidates
 	}
 }
 
@@ -142,7 +143,8 @@ function applyMutation(word: string, mutation: MutationType): string | null {
 export function generateCandidates(
 	terms: string[],
 	mutations: Set<MutationType>,
-	tlds: Set<string>
+	tlds: Set<string>,
+	customMutations?: CustomMutation[],
 ): DomainCandidate[] {
 	const seen = new Set<string>();
 	const candidates: DomainCandidate[] = [];
@@ -178,12 +180,36 @@ export function generateCandidates(
 		}
 	}
 
+	// Custom mutations: apply user-defined {term} patterns
+	if (mutations.has('custom') && customMutations && customMutations.length > 0) {
+		for (const term of cleanTerms) {
+			for (const cm of customMutations) {
+				const mutated = cm.pattern.replace(/\{term\}/g, term).replace(/[^a-z0-9-]/g, '');
+				if (!mutated || mutated.length < 2) continue;
+				for (const tld of tldArr) {
+					const domain = `${mutated}${tld}`;
+					if (seen.has(domain)) continue;
+					seen.add(domain);
+					candidates.push({
+						domain,
+						term,
+						name: mutated,
+						tld,
+						mutation: 'custom',
+						nameLength: mutated.length,
+					});
+				}
+			}
+		}
+	}
+
 	for (const rawTerm of terms) {
 		const term = rawTerm.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
 		if (!term || term.length < 2) continue;
 
 		for (const mutation of mutations) {
 			if (mutation === 'compound') continue; // handled above
+			if (mutation === 'custom') continue; // handled above
 			if (mutation === 'domainHack') {
 				// Domain hack generates its own TLD pairings
 				const hacks = findDomainHacks(term, tldArr);
