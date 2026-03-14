@@ -355,6 +355,69 @@ async function handleStream(domains: string[], signal?: AbortSignal): Promise<Re
 	});
 }
 
+/** Parse whois output into structured fields */
+function parseWhoisFields(raw: string): {
+	registrar?: string;
+	created?: string;
+	expires?: string;
+	updated?: string;
+	nameservers?: string[];
+	status?: string[];
+} {
+	const lines = raw.split('\n');
+	const result: ReturnType<typeof parseWhoisFields> = {};
+	const nameservers: string[] = [];
+	const statuses: string[] = [];
+
+	for (const line of lines) {
+		const lower = line.toLowerCase().trim();
+		const value = line.split(':').slice(1).join(':').trim();
+		if (!value) continue;
+
+		if (lower.startsWith('registrar:') && !result.registrar) {
+			result.registrar = value;
+		} else if ((lower.startsWith('creation date:') || lower.startsWith('created:') || lower.startsWith('registered on:')) && !result.created) {
+			result.created = value;
+		} else if ((lower.startsWith('registry expiry date:') || lower.startsWith('expiration date:') || lower.startsWith('expires:') || lower.startsWith('expiry date:')) && !result.expires) {
+			result.expires = value;
+		} else if ((lower.startsWith('updated date:') || lower.startsWith('last updated:')) && !result.updated) {
+			result.updated = value;
+		} else if (lower.startsWith('name server:') || lower.startsWith('nserver:')) {
+			nameservers.push(value.toLowerCase());
+		} else if (lower.startsWith('domain status:') || lower.startsWith('status:')) {
+			statuses.push(value);
+		}
+	}
+
+	if (nameservers.length > 0) result.nameservers = nameservers;
+	if (statuses.length > 0) result.status = statuses;
+	return result;
+}
+
+/** Run raw whois and return structured data */
+async function runWhoisDetail(domain: string): Promise<{
+	domain: string;
+	raw: string;
+	parsed: ReturnType<typeof parseWhoisFields>;
+	fetchedAt: number;
+}> {
+	await whoisCooldown(domain);
+	const proc = Bun.spawn(['whois', domain], { stdout: 'pipe', stderr: 'pipe' });
+	const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), WHOIS_TIMEOUT_MS));
+	const result = await Promise.race([proc.exited, timeout]);
+	if (result === null) {
+		proc.kill();
+		throw new Error('Whois lookup timed out');
+	}
+	const raw = await new Response(proc.stdout).text();
+	return {
+		domain,
+		raw,
+		parsed: parseWhoisFields(raw),
+		fetchedAt: Date.now(),
+	};
+}
+
 /** Porkbun TLD pricing cache */
 interface TldPricingEntry {
 	registration: string;
@@ -582,6 +645,19 @@ Bun.serve({
 			return Response.json(data, { headers: corsHeaders });
 		}
 
+		if (url.pathname === '/api/whois' && req.method === 'GET') {
+			const domain = url.searchParams.get('domain');
+			if (!domain || !VALID_DOMAIN.test(domain)) {
+				return Response.json({ error: 'valid domain parameter required' }, { status: 400, headers: corsHeaders });
+			}
+			try {
+				const data = await runWhoisDetail(domain);
+				return Response.json(data, { headers: corsHeaders });
+			} catch (err) {
+				return Response.json({ error: err instanceof Error ? err.message : 'Whois lookup failed' }, { status: 500, headers: corsHeaders });
+			}
+		}
+
 		if ((url.pathname === '/api/check' || url.pathname === '/api/stream') && req.method === 'POST') {
 			const body = (await req.json()) as CheckRequest;
 			if (!body.domains?.length) {
@@ -608,5 +684,6 @@ Bun.serve({
 console.log(`digr API server running on http://localhost:${PORT}`);
 console.log(`  POST /api/check   — batch domain check (dig + whois)`);
 console.log(`  POST /api/stream  — SSE streaming check`);
+console.log(`  GET  /api/whois   — whois detail lookup`);
 console.log(`  GET  /api/pricing — TLD pricing (Porkbun, 1hr cache)`);
 console.log(`  GET  /api/health  — health check`);

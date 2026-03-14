@@ -65,6 +65,14 @@
 		class="flex items-center gap-2 px-3 py-2 text-xs font-medium sticky top-0"
 		style="background: var(--bg-tertiary); color: var(--text-muted); z-index: 1;"
 	>
+		<!-- Select all checkbox -->
+		<input
+			type="checkbox"
+			checked={app.selectedDomains.size > 0}
+			onclick={() => app.toggleSelectAll()}
+			class="w-3.5 h-3.5 shrink-0 cursor-pointer accent-[var(--accent)]"
+			aria-label="Select all"
+		/>
 		{#each columns as col}
 			<button
 				onclick={() => app.setSort(col.field)}
@@ -85,8 +93,16 @@
 	{#each results as result (result.domain)}
 		<div
 			class="flex items-center gap-2 px-3 py-2 text-xs transition-colors"
-			style="background: var(--bg-secondary); border-top: 1px solid var(--border);"
+			style="background: var(--bg-secondary); border-top: 1px solid {app.selectedDomains.has(result.domain) ? 'var(--accent)' : 'var(--border)'};"
 		>
+			<!-- Selection checkbox -->
+			<input
+				type="checkbox"
+				checked={app.selectedDomains.has(result.domain)}
+				onclick={() => app.toggleSelect(result.domain)}
+				class="w-3.5 h-3.5 shrink-0 cursor-pointer accent-[var(--accent)]"
+				aria-label="Select {result.domain}"
+			/>
 			<!-- Status dot -->
 			<div class="w-10 text-center">
 				<span
@@ -110,6 +126,13 @@
 				>{copiedDomains.has(result.domain) ? '\u2713' : '\u2398'}</button>
 				{#if result.status === 'available'}
 					<RegistrarMenu domain={result.domain} />
+				{:else if result.status === 'taken' || result.status === 'reserved'}
+					<button
+						onclick={() => app.openWhois(result.domain)}
+						class="text-xs px-1 py-0 rounded border-0 cursor-pointer shrink-0"
+						style="background: transparent; color: var(--text-muted); font-size: 0.6rem;"
+						title="Whois lookup"
+					>WH</button>
 				{:else if result.status === 'error'}
 					<button
 						onclick={() => app.recheckDomain(result.domain)}

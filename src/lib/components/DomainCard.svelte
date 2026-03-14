@@ -20,6 +20,8 @@
 		if (!entry) return '';
 		return `Porkbun: reg $${entry.registration} / renew $${entry.renewal}`;
 	});
+	let isSelected = $derived(app.selectedDomains.has(result.domain));
+	let isMonitored = $derived(app.isMonitored(result.domain));
 	let copied = $state(false);
 	let copyTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -53,7 +55,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="rounded-lg p-3 transition-colors"
-	style="background: var(--bg-secondary); border: 1px solid {result.status === 'available' ? 'color-mix(in srgb, var(--available) 30%, var(--border))' : 'var(--border)'};"
+	style="background: var(--bg-secondary); border: 1px solid {isSelected ? 'var(--accent)' : result.status === 'available' ? 'color-mix(in srgb, var(--available) 30%, var(--border))' : 'var(--border)'};"
 	data-domain-card
 	tabindex="0"
 	role="article"
@@ -63,6 +65,14 @@
 		<!-- Domain name -->
 		<div class="min-w-0">
 			<div class="flex items-center gap-2">
+				<!-- Bulk selection checkbox -->
+				<input
+					type="checkbox"
+					checked={isSelected}
+					onclick={(e) => { e.stopPropagation(); app.toggleSelect(result.domain); }}
+					class="w-3.5 h-3.5 shrink-0 cursor-pointer accent-[var(--accent)]"
+					aria-label="Select {result.domain}"
+				/>
 				<span
 					class="text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0"
 					class:checking-pulse={result.status === 'checking'}
@@ -110,6 +120,22 @@
 
 		<!-- Actions -->
 		<div class="flex items-center gap-1 shrink-0">
+			{#if result.status === 'taken' || result.status === 'reserved'}
+				<button
+					onclick={() => app.openWhois(result.domain)}
+					class="inline-flex items-center justify-center w-6 h-6 rounded border-0 cursor-pointer"
+					style="background: transparent; color: var(--text-muted); font-size: 0.65rem;"
+					title="Whois lookup"
+					aria-label="View whois details"
+				>WH</button>
+			{/if}
+			<button
+				onclick={() => app.isMonitored(result.domain) ? app.removeFromMonitor(result.domain) : app.addToMonitor(result.domain)}
+				class="inline-flex items-center justify-center w-6 h-6 rounded border-0 cursor-pointer"
+				style="background: transparent; color: {isMonitored ? 'var(--accent)' : 'var(--text-muted)'}; font-size: 0.7rem;"
+				title={isMonitored ? 'Stop monitoring' : 'Monitor domain'}
+				aria-label={isMonitored ? 'Stop monitoring' : 'Monitor domain'}
+			>&#x1F441;</button>
 			<SaveBookmarkButton {result} />
 			<span
 				class="text-xs font-medium px-2 py-0.5 rounded-full"

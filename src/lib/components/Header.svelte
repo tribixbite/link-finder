@@ -26,6 +26,22 @@
 			</span>
 		{/if}
 
+		<!-- Monitor button -->
+		{#if app.monitorEntries.length > 0}
+			<button
+				onclick={() => { app.monitorPanelOpen = !app.monitorPanelOpen; }}
+				class="relative p-2 rounded-lg transition-colors cursor-pointer border-0"
+				style="background: var(--bg-tertiary); color: {app.monitorConfig.enabled ? 'var(--accent)' : 'var(--text-secondary)'};"
+				title="Domain monitor ({app.monitorEntries.length})"
+			>
+				&#x1F441;
+				<span
+					class="absolute -top-1 -right-1 min-w-4 h-4 flex items-center justify-center rounded-full text-xs font-bold px-1"
+					style="background: var(--accent); color: var(--bg-primary); font-size: 0.6rem; line-height: 1;"
+				>{app.monitorEntries.length}</span>
+			</button>
+		{/if}
+
 		<!-- Saved domains button -->
 		<button
 			onclick={() => { app.savedViewOpen = !app.savedViewOpen; }}

@@ -12,6 +12,9 @@
 	import DomainCard from '$lib/components/DomainCard.svelte';
 	import DomainTable from '$lib/components/DomainTable.svelte';
 	import SavedPanel from '$lib/components/SavedPanel.svelte';
+	import WhoisPanel from '$lib/components/WhoisPanel.svelte';
+	import BulkActionBar from '$lib/components/BulkActionBar.svelte';
+	import MonitorPanel from '$lib/components/MonitorPanel.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 
 	const INITIAL_BATCH = 60;
@@ -228,6 +231,19 @@
 	{#if app.savedViewOpen}
 		<SavedPanel />
 	{/if}
+
+	<!-- Whois detail panel -->
+	{#if app.whoisPanel.domain}
+		<WhoisPanel />
+	{/if}
+
+	<!-- Monitor panel -->
+	{#if app.monitorPanelOpen}
+		<MonitorPanel />
+	{/if}
+
+	<!-- Bulk action bar -->
+	<BulkActionBar />
 
 	<!-- Toast notifications -->
 	<Toast />
