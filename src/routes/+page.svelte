@@ -1,6 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { replaceState } from '$app/navigation';
 	import { app } from '$lib/state/app.svelte';
+	import { encodeSearchParams, decodeSearchParams } from '$lib/utils';
+	import type { MutationType } from '$lib/types';
 	import Header from '$lib/components/Header.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import FilterSidebar from '$lib/components/FilterSidebar.svelte';
@@ -30,8 +33,66 @@
 		visibleCount = INITIAL_BATCH;
 	});
 
+	// --- Infinite scroll via IntersectionObserver ---
+	let sentinelRef = $state<HTMLDivElement | null>(null);
+	let observer: IntersectionObserver | null = null;
+
+	$effect(() => {
+		if (sentinelRef && hasMore) {
+			observer?.disconnect();
+			observer = new IntersectionObserver(
+				(entries) => {
+					if (entries[0]?.isIntersecting) {
+						visibleCount += LOAD_MORE;
+					}
+				},
+				{ rootMargin: '200px' }
+			);
+			observer.observe(sentinelRef);
+		} else {
+			observer?.disconnect();
+		}
+	});
+
+	// --- URL state sharing ---
+	let urlSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Reactive URL sync: update URL when search state changes (debounced)
+	$effect(() => {
+		const search = encodeSearchParams({
+			terms: app.termsInput || undefined,
+			tlds: app.selectedTlds.size > 0 ? [...app.selectedTlds] : undefined,
+			mutations: app.selectedMutations.size > 0 ? [...app.selectedMutations] : undefined,
+			sort: app.sort,
+			status: app.filters.status,
+		});
+		if (urlSyncTimer) clearTimeout(urlSyncTimer);
+		urlSyncTimer = setTimeout(() => {
+			const url = new URL(window.location.href);
+			const newUrl = `${url.pathname}${search}`;
+			if (newUrl !== `${url.pathname}${url.search}`) {
+				replaceState(newUrl, {});
+			}
+		}, 300);
+	});
+
 	onMount(() => {
 		app.initTheme();
+
+		// Check URL params on mount — override localStorage state if present
+		const urlState = decodeSearchParams(window.location.search);
+		if (urlState) {
+			if (urlState.terms) app.setTermsInput(urlState.terms);
+			if (urlState.tlds) app.selectedTlds = new Set(urlState.tlds);
+			if (urlState.mutations) app.selectedMutations = new Set(urlState.mutations);
+			if (urlState.sort) app.sort = urlState.sort;
+			if (urlState.status) app.setStatusFilter(urlState.status);
+		}
+	});
+
+	onDestroy(() => {
+		observer?.disconnect();
+		if (urlSyncTimer) clearTimeout(urlSyncTimer);
 	});
 </script>
 
@@ -90,17 +151,9 @@
 						<DomainTable results={visibleResults} />
 					{/if}
 
-					<!-- Load more -->
+					<!-- Infinite scroll sentinel -->
 					{#if hasMore}
-						<div class="flex justify-center mt-4">
-							<button
-								onclick={() => { visibleCount += LOAD_MORE; }}
-								class="px-6 py-2 rounded-lg text-sm cursor-pointer border-0 transition-colors"
-								style="background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border);"
-							>
-								Show more ({app.filteredResults.length - visibleCount} remaining)
-							</button>
-						</div>
+						<div bind:this={sentinelRef} class="h-1" aria-hidden="true"></div>
 					{/if}
 
 					<!-- Empty state -->

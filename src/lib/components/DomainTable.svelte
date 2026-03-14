@@ -2,6 +2,7 @@
 	import { app } from '$lib/state/app.svelte';
 	import { MUTATION_INFO } from '$lib/types';
 	import type { DomainResult, SortField } from '$lib/types';
+	import { formatAge, isStale } from '$lib/utils';
 
 	interface Props {
 		results: DomainResult[];
@@ -20,6 +21,29 @@
 	/** Get formatted price for a TLD */
 	function getPrice(tld: string): string | null {
 		return app.getPrice(tld);
+	}
+
+	/** Get pricing tooltip for a TLD (registration + renewal) */
+	function getPricingTooltip(tld: string): string {
+		const key = tld.startsWith('.') ? tld.slice(1) : tld;
+		const entry = app.pricing.get(key);
+		if (!entry) return '';
+		return `Porkbun: reg $${entry.registration} / renew $${entry.renewal}`;
+	}
+
+	/** Per-row copy feedback without per-row state */
+	let copiedDomains = $state(new Set<string>());
+
+	async function copyDomain(domain: string) {
+		try {
+			await navigator.clipboard.writeText(domain);
+			copiedDomains = new Set([...copiedDomains, domain]);
+			setTimeout(() => {
+				const next = new Set(copiedDomains);
+				next.delete(domain);
+				copiedDomains = next;
+			}, 1200);
+		} catch { /* clipboard unavailable */ }
 	}
 
 	import RegistrarMenu from './RegistrarMenu.svelte';
@@ -53,6 +77,7 @@
 			</button>
 		{/each}
 		<div class="w-16 text-right hidden sm:block" style="color: var(--text-muted);">Price</div>
+		<div class="w-14 text-right hidden sm:block" style="color: var(--text-muted);">Age</div>
 		<div class="w-7"></div>
 	</div>
 
@@ -77,6 +102,12 @@
 				<span class="truncate">
 					<span style="color: var(--text-primary);">{result.name}</span><span style="color: var(--text-muted);">{result.tld}</span>
 				</span>
+				<button
+					onclick={() => copyDomain(result.domain)}
+					class="inline-flex items-center justify-center w-4 h-4 rounded border-0 cursor-pointer shrink-0"
+					style="background: transparent; color: {copiedDomains.has(result.domain) ? 'var(--success)' : 'var(--text-muted)'}; font-size: 0.6rem; padding: 0;"
+					title="Copy domain"
+				>{copiedDomains.has(result.domain) ? '\u2713' : '\u2398'}</button>
 				{#if result.status === 'available'}
 					<RegistrarMenu domain={result.domain} />
 				{:else if result.status === 'error'}
@@ -99,10 +130,15 @@
 			<div class="w-12 text-right tabular-nums" style="color: var(--text-muted);">{result.nameLength}</div>
 
 			<!-- Price -->
-			<div class="w-16 text-right tabular-nums hidden sm:block" style="color: var(--success); font-size: 0.7rem;">
+			<div class="w-16 text-right tabular-nums hidden sm:block" style="color: var(--success); font-size: 0.7rem;" title={getPricingTooltip(result.tld)}>
 				{#if getPrice(result.tld)}
 					${getPrice(result.tld)}
 				{/if}
+			</div>
+
+			<!-- Age -->
+			<div class="w-14 text-right tabular-nums hidden sm:block" style="color: {isStale(result.checkedAt) ? 'var(--warning)' : 'var(--text-muted)'}; font-size: 0.65rem;">
+				{formatAge(result.checkedAt)}
 			</div>
 
 			<!-- Save -->

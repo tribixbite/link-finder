@@ -1,4 +1,5 @@
 import { generateCandidates } from '../mutations';
+import { isStale } from '../utils';
 import type {
 	DomainCandidate,
 	DomainResult,
@@ -23,6 +24,9 @@ function parseTerms(input: string): string[] {
 
 /** localStorage key prefix */
 const LS = 'digr-';
+
+/** Maximum number of results to persist (prune oldest by checkedAt) */
+const MAX_STORED_RESULTS = 2000;
 
 /**
  * Module-level operational state — kept outside the class to prevent
@@ -138,8 +142,12 @@ class AppState {
 				hideErrors: this.filters.hideErrors,
 				registrars: [...this.filters.registrars],
 			}));
-			// Serialize results Map (skip 'checking' status entries)
-			const entries = [...this.results.entries()].filter(([, r]) => r.status !== 'checking');
+			// Serialize results Map (skip 'checking' status entries, prune to MAX_STORED_RESULTS)
+			let entries = [...this.results.entries()].filter(([, r]) => r.status !== 'checking');
+			if (entries.length > MAX_STORED_RESULTS) {
+				entries.sort((a, b) => (b[1].checkedAt ?? 0) - (a[1].checkedAt ?? 0));
+				entries = entries.slice(0, MAX_STORED_RESULTS);
+			}
 			localStorage.setItem(LS + 'results', JSON.stringify(entries));
 			// Persist saved domains and lists
 			localStorage.setItem(LS + 'lists', JSON.stringify(this.lists));
@@ -280,6 +288,119 @@ class AppState {
 			if (r.status === 'error') count++;
 		}
 		return count;
+	}
+
+	/** Count of stale results (checked >24h ago, unfiltered) */
+	get staleCount(): number {
+		let count = 0;
+		for (const r of this.results.values()) {
+			if (r.status !== 'checking' && isStale(r.checkedAt)) count++;
+		}
+		return count;
+	}
+
+	/** Re-check all stale results (older than 24h) */
+	async recheckStale() {
+		const staleDomains = [...this.results.values()]
+			.filter((r) => r.status !== 'checking' && isStale(r.checkedAt))
+			.map((r) => r.domain);
+		if (staleDomains.length === 0) return;
+
+		// Set all stale to checking
+		const updated = new Map(this.results);
+		for (const d of staleDomains) {
+			const entry = updated.get(d);
+			if (entry) updated.set(d, { ...entry, status: 'checking', error: undefined });
+		}
+		this.results = updated;
+
+		try {
+			const res = await fetch('/api/check', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ domains: staleDomains }),
+			});
+			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string; error?: string }> };
+			if (data.results) {
+				const next = new Map(this.results);
+				for (const r of data.results) {
+					const entry = next.get(r.domain);
+					if (entry) {
+						next.set(r.domain, {
+							...entry,
+							records: r.records,
+							status: r.status as DomainResult['status'],
+							error: r.error,
+							checkedAt: Date.now(),
+						});
+					}
+				}
+				this.results = next;
+			}
+		} catch {
+			const next = new Map(this.results);
+			for (const d of staleDomains) {
+				const entry = next.get(d);
+				if (entry && entry.status === 'checking') {
+					next.set(d, { ...entry, status: 'error', error: 'stale recheck failed' });
+				}
+			}
+			this.results = next;
+		}
+		this.persist();
+	}
+
+	/** Estimated localStorage usage for digr-* keys in KB */
+	get storageUsageKB(): number {
+		let bytes = 0;
+		try {
+			for (let i = 0; i < localStorage.length; i++) {
+				const key = localStorage.key(i);
+				if (key?.startsWith(LS)) {
+					bytes += key.length * 2; // UTF-16
+					bytes += (localStorage.getItem(key)?.length ?? 0) * 2;
+				}
+			}
+		} catch { /* ignore */ }
+		return Math.round(bytes / 1024);
+	}
+
+	/** Export saved lists + domains as JSON */
+	exportSaved(): string {
+		return JSON.stringify({
+			version: 1,
+			exportedAt: Date.now(),
+			lists: this.lists,
+			saved: this.saved,
+		}, null, 2);
+	}
+
+	/** Import saved lists + domains from JSON, merging by dedup */
+	importSaved(json: string): { lists: number; domains: number } {
+		const data = JSON.parse(json) as { lists?: DomainList[]; saved?: SavedDomain[] };
+		let listsAdded = 0;
+		let domainsAdded = 0;
+
+		if (data.lists) {
+			const existingIds = new Set(this.lists.map((l) => l.id));
+			const newLists = data.lists.filter((l) => !existingIds.has(l.id));
+			if (newLists.length > 0) {
+				this.lists = [...this.lists, ...newLists];
+				listsAdded = newLists.length;
+			}
+		}
+
+		if (data.saved) {
+			const existingKey = new Set(this.saved.map((s) => `${s.domain}:${s.listId}`));
+			const newSaved = data.saved.filter((s) => !existingKey.has(`${s.domain}:${s.listId}`));
+			if (newSaved.length > 0) {
+				this.saved = [...this.saved, ...newSaved];
+				domainsAdded = newSaved.length;
+			}
+		}
+
+		this.persist();
+		return { lists: listsAdded, domains: domainsAdded };
 	}
 
 	/** Whether any filter is active */

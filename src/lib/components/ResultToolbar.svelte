@@ -52,6 +52,16 @@
 	</div>
 
 	<div class="flex items-center gap-2">
+		<!-- Recheck stale -->
+		{#if app.staleCount > 0}
+			<button
+				onclick={() => app.recheckStale()}
+				class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors"
+				style="background: color-mix(in srgb, var(--warning) 15%, var(--bg-tertiary)); color: var(--warning);"
+				title="Re-check results older than 24 hours"
+			>Recheck stale ({app.staleCount})</button>
+		{/if}
+
 		<!-- Copy available -->
 		<button
 			onclick={copyAvailable}

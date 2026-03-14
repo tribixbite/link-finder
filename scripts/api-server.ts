@@ -15,8 +15,10 @@ const MAX_CONCURRENT_WHOIS = 4; // whois servers rate-limit aggressively
 const DIG_TIMEOUT_MS = 5000;
 const WHOIS_TIMEOUT_MS = 8000;
 const WHOIS_MAX_RETRIES = 3;
-const WHOIS_RETRY_DELAY_MS = 1000;
+const WHOIS_RETRY_BASE_DELAY_MS = 1000; // exponential: 1s, 2s, 4s
+const WHOIS_MIN_GAP_MS = 500; // per-TLD cooldown between whois calls
 const MAX_DOMAINS_PER_REQUEST = 500;
+const RESULT_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minute result cache
 const VALID_DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z]{2,})+$/i;
 const PRICING_TTL_MS = 60 * 60 * 1000; // 1 hour cache
 
@@ -62,6 +64,55 @@ const WHOIS_REGISTERED_PATTERNS = [
 	/registered on:/i,
 	/created:/i,
 ];
+
+// --- Server-side result cache (15min TTL) ---
+const _resultCache = new Map<string, { result: DomainCheckResult; cachedAt: number }>();
+
+function getCachedResult(domain: string): DomainCheckResult | null {
+	const entry = _resultCache.get(domain);
+	if (!entry) return null;
+	if (Date.now() - entry.cachedAt > RESULT_CACHE_TTL_MS) {
+		_resultCache.delete(domain);
+		return null;
+	}
+	return entry.result;
+}
+
+function cacheResult(result: DomainCheckResult): void {
+	// Only cache successful results, not errors
+	if (result.status === 'error') return;
+	_resultCache.set(result.domain, { result, cachedAt: Date.now() });
+}
+
+// Periodic cache cleanup every 5 minutes
+setInterval(() => {
+	const now = Date.now();
+	for (const [key, entry] of _resultCache) {
+		if (now - entry.cachedAt > RESULT_CACHE_TTL_MS) {
+			_resultCache.delete(key);
+		}
+	}
+}, 5 * 60 * 1000);
+
+// --- Per-TLD whois cooldown ---
+const _whoisLastRequest = new Map<string, number>();
+
+/** Extract TLD from domain (e.g. "torch.dev" → "dev") */
+function extractTld(domain: string): string {
+	const dot = domain.lastIndexOf('.');
+	return dot >= 0 ? domain.slice(dot + 1) : domain;
+}
+
+/** Wait if needed to enforce per-TLD whois rate limiting */
+async function whoisCooldown(domain: string): Promise<void> {
+	const tld = extractTld(domain);
+	const last = _whoisLastRequest.get(tld) ?? 0;
+	const elapsed = Date.now() - last;
+	if (elapsed < WHOIS_MIN_GAP_MS) {
+		await new Promise((r) => setTimeout(r, WHOIS_MIN_GAP_MS - elapsed));
+	}
+	_whoisLastRequest.set(tld, Date.now());
+}
 
 /**
  * Phase 1: Fast dig check — returns DNS status code + records.
@@ -153,11 +204,13 @@ async function whoisCheckOnce(domain: string): Promise<'available' | 'taken' | '
  */
 async function whoisCheck(domain: string): Promise<'available' | 'taken' | 'reserved' | 'error'> {
 	for (let attempt = 1; attempt <= WHOIS_MAX_RETRIES; attempt++) {
+		await whoisCooldown(domain);
 		const result = await whoisCheckOnce(domain);
 		if (result !== 'error') return result;
-		// Don't delay after the last attempt
+		// Exponential backoff: 1s, 2s, 4s — don't delay after the last attempt
 		if (attempt < WHOIS_MAX_RETRIES) {
-			await new Promise((r) => setTimeout(r, WHOIS_RETRY_DELAY_MS));
+			const delay = WHOIS_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+			await new Promise((r) => setTimeout(r, delay));
 		}
 	}
 	return 'error';
@@ -165,33 +218,49 @@ async function whoisCheck(domain: string): Promise<'available' | 'taken' | 'rese
 
 /** Full domain check: dig + whois verification for NXDOMAIN results */
 async function checkDomain(domain: string): Promise<DomainCheckResult> {
+	// Check result cache first
+	const cached = getCachedResult(domain);
+	if (cached) return cached;
+
 	try {
 		const dig = await digCheck(domain);
 
 		// If dig found records, domain is definitely taken
 		if (dig.records.length > 0) {
-			return { domain, records: dig.records, status: 'taken', method: 'dig' };
+			const r: DomainCheckResult = { domain, records: dig.records, status: 'taken', method: 'dig' };
+			cacheResult(r);
+			return r;
 		}
 
 		// If NOT NXDOMAIN (NOERROR with no records), domain is registered but has no A records
 		if (!dig.nxdomain) {
-			return { domain, records: [], status: 'taken', method: 'dig' };
+			const r: DomainCheckResult = { domain, records: [], status: 'taken', method: 'dig' };
+			cacheResult(r);
+			return r;
 		}
 
 		// NXDOMAIN — domain doesn't exist in DNS, verify with whois
 		const whois = await whoisCheck(domain);
 		if (whois === 'reserved') {
-			return { domain, records: [], status: 'reserved', method: 'whois' };
+			const r: DomainCheckResult = { domain, records: [], status: 'reserved', method: 'whois' };
+			cacheResult(r);
+			return r;
 		}
 		if (whois === 'taken') {
-			return { domain, records: [], status: 'taken', method: 'whois' };
+			const r: DomainCheckResult = { domain, records: [], status: 'taken', method: 'whois' };
+			cacheResult(r);
+			return r;
 		}
 		if (whois === 'available') {
-			return { domain, records: [], status: 'available', method: 'whois' };
+			const r: DomainCheckResult = { domain, records: [], status: 'available', method: 'whois' };
+			cacheResult(r);
+			return r;
 		}
 
 		// Whois errored after retries — report as available with caveat (NXDOMAIN is strong signal)
-		return { domain, records: [], status: 'available', method: 'dig', error: 'whois failed after retries' };
+		const r: DomainCheckResult = { domain, records: [], status: 'available', method: 'dig', error: 'whois failed after retries' };
+		cacheResult(r);
+		return r;
 	} catch (err) {
 		return {
 			domain,
@@ -485,7 +554,7 @@ Bun.serve({
 		}
 
 		if (url.pathname === '/api/health') {
-			return Response.json({ ok: true, pid: process.pid }, { headers: corsHeaders });
+			return Response.json({ ok: true, pid: process.pid, cacheSize: _resultCache.size }, { headers: corsHeaders });
 		}
 
 		if (url.pathname === '/api/pricing' && req.method === 'GET') {

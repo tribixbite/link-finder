@@ -32,6 +32,25 @@
 		}
 	}
 
+	/** Get pricing label for a registrar (e.g. "$9.73" for Porkbun, "at-cost" for Cloudflare) */
+	function getPricingLabel(rid: RegistrarId): string {
+		if (rid === 'cloudflare') return 'at-cost';
+		if (rid === 'porkbun') {
+			const tld = getTld(domain);
+			const price = app.getPrice(tld);
+			return price ? `$${price}` : '';
+		}
+		return '';
+	}
+
+	/** Get full pricing tooltip for Porkbun (registration + renewal) */
+	function getPricingTooltip(): string {
+		const tldKey = getTld(domain).replace(/^\./, '');
+		const entry = app.pricing.get(tldKey);
+		if (!entry) return '';
+		return `Porkbun: reg $${entry.registration} / renew $${entry.renewal}`;
+	}
+
 	$effect(() => {
 		if (open) {
 			document.addEventListener('click', handleClickOutside, true);
@@ -58,9 +77,10 @@
 	</button>
 
 	{#if open}
-		<div class="popover" style="right: 0; top: 100%; margin-top: 4px;">
+		<div class="popover" style="right: 0; top: 100%; margin-top: 4px;" title={getPricingTooltip()}>
 			{#each available() as rid}
 				{@const reg = REGISTRARS[rid]}
+				{@const priceLabel = getPricingLabel(rid)}
 				<a
 					href={reg.url(domain)}
 					target="_blank"
@@ -72,7 +92,10 @@
 						class="inline-block w-2.5 h-2.5 rounded-full shrink-0"
 						style="background: {reg.color};"
 					></span>
-					{reg.name}
+					<span class="flex-1">{reg.name}</span>
+					{#if priceLabel}
+						<span class="text-xs tabular-nums" style="color: var(--text-muted);">{priceLabel}</span>
+					{/if}
 				</a>
 			{/each}
 		</div>

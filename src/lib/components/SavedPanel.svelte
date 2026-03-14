@@ -6,6 +6,38 @@
 	let newListName = $state('');
 
 	let filteredSaved = $derived(app.getSavedDomains(app.savedFilterListId));
+	let importStatus = $state('');
+	let importTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	function exportSaved() {
+		const json = app.exportSaved();
+		const blob = new Blob([json], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `digr-saved-${new Date().toISOString().slice(0, 10)}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	function handleImport(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = () => {
+			try {
+				const result = app.importSaved(reader.result as string);
+				importStatus = `+${result.lists}L +${result.domains}D`;
+			} catch {
+				importStatus = 'Invalid file';
+			}
+			if (importTimeout) clearTimeout(importTimeout);
+			importTimeout = setTimeout(() => { importStatus = ''; }, 2500);
+			input.value = '';
+		};
+		reader.readAsText(file);
+	}
 
 	function startRename(id: string, currentName: string) {
 		editingListId = id;
@@ -49,13 +81,36 @@
 	>
 		<!-- Panel header -->
 		<div class="flex items-center justify-between p-4" style="border-bottom: 1px solid var(--border);">
-			<h2 class="text-sm font-semibold m-0" style="color: var(--text-primary);">Saved Domains</h2>
-			<button
-				onclick={() => { app.savedViewOpen = false; }}
-				class="w-7 h-7 rounded flex items-center justify-center border-0 cursor-pointer"
-				style="background: var(--bg-tertiary); color: var(--text-muted);"
-				aria-label="Close"
-			>&times;</button>
+			<div>
+				<h2 class="text-sm font-semibold m-0" style="color: var(--text-primary);">Saved Domains</h2>
+				<span class="text-xs tabular-nums" style="color: var(--text-muted);">{app.storageUsageKB}KB used</span>
+			</div>
+			<div class="flex items-center gap-1">
+				<button
+					onclick={exportSaved}
+					disabled={app.saved.length === 0}
+					class="text-xs px-2 py-1 rounded border-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+					style="background: var(--bg-tertiary); color: var(--text-secondary);"
+					title="Export saved as JSON"
+				>Export</button>
+				<label
+					class="text-xs px-2 py-1 rounded cursor-pointer"
+					style="background: var(--bg-tertiary); color: var(--text-secondary);"
+					title="Import saved from JSON"
+				>
+					Import
+					<input type="file" accept=".json" class="hidden" onchange={handleImport} />
+				</label>
+				{#if importStatus}
+					<span class="text-xs" style="color: var(--success);">{importStatus}</span>
+				{/if}
+				<button
+					onclick={() => { app.savedViewOpen = false; }}
+					class="w-7 h-7 rounded flex items-center justify-center border-0 cursor-pointer"
+					style="background: var(--bg-tertiary); color: var(--text-muted);"
+					aria-label="Close"
+				>&times;</button>
+			</div>
 		</div>
 
 		<!-- Lists section -->

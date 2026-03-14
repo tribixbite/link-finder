@@ -2,6 +2,36 @@ import type { DomainCandidate, MutationType } from './types';
 
 const VOWELS = new Set(['a', 'e', 'i', 'o', 'u']);
 
+/** Minimum suffix length for domain hacks (skip single-char TLD suffix matches) */
+const MIN_HACK_SUFFIX_LENGTH = 2;
+
+/**
+ * Curated set of TLDs that form natural word endings — only these generate domain hacks.
+ * This dramatically reduces noise from the 470+ TLD list.
+ */
+const HACKABLE_TLDS = new Set([
+	// Common word-ending suffixes
+	'.us', '.ly', '.io', '.er', '.ed', '.al', '.an', '.ar', '.as', '.at',
+	'.be', '.by', '.ch', '.co', '.de', '.do', '.es', '.eu', '.fm', '.gg',
+	'.id', '.ie', '.im', '.in', '.is', '.it', '.la', '.li', '.me', '.my',
+	'.na', '.no', '.nu', '.pe', '.ph', '.re', '.rs', '.se', '.sh', '.si',
+	'.so', '.to', '.tv', '.uk', '.vc', '.ws',
+	// Multi-char word endings
+	'.ac', '.ad', '.ag', '.am', '.art', '.bar', '.bio', '.biz', '.buzz',
+	'.cam', '.car', '.cc', '.click', '.club', '.cool', '.day',
+	'.design', '.dev', '.dog', '.eco', '.email', '.fail', '.fan',
+	'.farm', '.fast', '.fish', '.fit', '.fun', '.gay', '.gold',
+	'.green', '.guru', '.hair', '.help', '.hiv', '.host', '.hot',
+	'.house', '.how', '.icu', '.inc', '.ing', '.ink', '.land',
+	'.law', '.life', '.link', '.live', '.lol', '.love', '.men',
+	'.mobi', '.mom', '.name', '.net', '.new', '.one', '.org',
+	'.page', '.pet', '.pink', '.place', '.pro', '.pub', '.red',
+	'.rest', '.rip', '.run', '.sale', '.sex', '.site', '.ski',
+	'.social', '.store', '.style', '.surf', '.tax', '.team',
+	'.tech', '.top', '.vet', '.video', '.vote', '.watch', '.win',
+	'.work', '.world', '.wtf', '.xyz', '.zone',
+]);
+
 /** Remove the last vowel from a word. "filter" → "filtr", "scope" → "scop" */
 function dropLastVowel(word: string): string | null {
 	for (let i = word.length - 1; i >= 0; i--) {
@@ -63,19 +93,27 @@ function doubleLastLetter(word: string): string | null {
 /**
  * Domain hack: find TLDs that match the word ending.
  * "delicious" + ".us" → "delicio.us"
- * Returns array of [name, tld] pairs.
+ * Only generates hacks for TLDs in the curated HACKABLE_TLDS set, and
+ * requires minimum suffix length to avoid noise. Results sorted by
+ * quality score (longer suffix matches = higher quality).
  */
 export function findDomainHacks(word: string, tlds: string[]): Array<{ name: string; tld: string }> {
-	const results: Array<{ name: string; tld: string }> = [];
+	const results: Array<{ name: string; tld: string; score: number }> = [];
 	for (const tld of tlds) {
+		// Only generate hacks for curated TLDs
+		if (!HACKABLE_TLDS.has(tld)) continue;
 		const suffix = tld.slice(1); // remove leading dot
+		if (suffix.length < MIN_HACK_SUFFIX_LENGTH) continue;
 		if (word.endsWith(suffix) && word.length > suffix.length) {
 			const name = word.slice(0, word.length - suffix.length);
 			if (name.length >= 2) { // min 2 chars for a valid domain name
-				results.push({ name, tld });
+				const score = suffix.length / word.length; // quality: longer suffix = better hack
+				results.push({ name, tld, score });
 			}
 		}
 	}
+	// Sort by quality score descending (best hacks first)
+	results.sort((a, b) => b.score - a.score);
 	return results;
 }
 

@@ -2,6 +2,7 @@
 	import { app } from '$lib/state/app.svelte';
 	import { MUTATION_INFO } from '$lib/types';
 	import type { DomainResult } from '$lib/types';
+	import { formatAge, isStale } from '$lib/utils';
 
 	interface Props {
 		result: DomainResult;
@@ -13,6 +14,23 @@
 	import SaveBookmarkButton from './SaveBookmarkButton.svelte';
 
 	let price = $derived(app.getPrice(result.tld));
+	let pricingTooltip = $derived(() => {
+		const tldKey = result.tld.startsWith('.') ? result.tld.slice(1) : result.tld;
+		const entry = app.pricing.get(tldKey);
+		if (!entry) return '';
+		return `Porkbun: reg $${entry.registration} / renew $${entry.renewal}`;
+	});
+	let copied = $state(false);
+	let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+	async function copyDomain() {
+		try {
+			await navigator.clipboard.writeText(result.domain);
+			copied = true;
+			if (copyTimer) clearTimeout(copyTimer);
+			copyTimer = setTimeout(() => { copied = false; }, 1200);
+		} catch { /* clipboard unavailable */ }
+	}
 
 	const statusColors: Record<string, string> = {
 		available: 'var(--available)',
@@ -53,6 +71,14 @@
 					title={result.domain}
 				>{result.name}<span style="color: var(--text-muted);">{result.tld}</span></span>
 
+				<button
+					onclick={copyDomain}
+					class="inline-flex items-center justify-center w-5 h-5 rounded border-0 cursor-pointer shrink-0 transition-colors"
+					style="background: transparent; color: {copied ? 'var(--success)' : 'var(--text-muted)'}; font-size: 0.7rem;"
+					title="Copy domain"
+					aria-label="Copy domain to clipboard"
+				>{copied ? '\u2713' : '\u2398'}</button>
+
 				{#if result.status === 'available'}
 					<RegistrarMenu domain={result.domain} />
 				{/if}
@@ -66,7 +92,10 @@
 				>{MUTATION_INFO[result.mutation].label}</span>
 				<span class="text-xs tabular-nums" style="color: var(--text-muted);">{result.nameLength}ch</span>
 				{#if price}
-					<span class="text-xs tabular-nums font-medium" style="color: var(--success);">${price}/yr</span>
+					<span class="text-xs tabular-nums font-medium" style="color: var(--success);" title={pricingTooltip()}>${price}/yr</span>
+				{/if}
+				{#if result.checkedAt && result.status !== 'checking'}
+					<span class="text-xs tabular-nums" style="color: {isStale(result.checkedAt) ? 'var(--warning)' : 'var(--text-muted)'};">{formatAge(result.checkedAt)}</span>
 				{/if}
 			</div>
 		</div>
