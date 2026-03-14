@@ -33,6 +33,13 @@
 			</span>
 		{/if}
 
+		{#if app.filters.hideErrors}
+			<span class="filter-pill">
+				hiding errors
+				<button onclick={() => { app.setFilter({ hideErrors: false }); }}>&times;</button>
+			</span>
+		{/if}
+
 		{#if app.filters.search}
 			<span class="filter-pill">
 				"{app.filters.search}"

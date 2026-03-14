@@ -79,6 +79,7 @@ export interface Filters {
 	lengthMin: number;
 	lengthMax: number;
 	search: string;
+	hideErrors: boolean;
 }
 
 /** Sort options */

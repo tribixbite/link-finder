@@ -83,7 +83,7 @@ class AppState {
 	filters = $state<Filters>((() => {
 		try {
 			const raw = localStorage.getItem(LS + 'filters');
-			if (raw === null) return { status: 'all' as const, tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '' };
+			if (raw === null) return { status: 'all' as const, tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '', hideErrors: false };
 			const parsed = JSON.parse(raw);
 			return {
 				status: parsed.status || 'all',
@@ -92,9 +92,10 @@ class AppState {
 				lengthMin: parsed.lengthMin ?? 0,
 				lengthMax: parsed.lengthMax ?? 99,
 				search: parsed.search || '',
+				hideErrors: parsed.hideErrors ?? false,
 			};
 		} catch {
-			return { status: 'all' as const, tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '' };
+			return { status: 'all' as const, tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '', hideErrors: false };
 		}
 	})());
 
@@ -129,6 +130,7 @@ class AppState {
 				lengthMin: this.filters.lengthMin,
 				lengthMax: this.filters.lengthMax,
 				search: this.filters.search,
+				hideErrors: this.filters.hideErrors,
 			}));
 			// Serialize results Map (skip 'checking' status entries)
 			const entries = [...this.results.entries()].filter(([, r]) => r.status !== 'checking');
@@ -162,6 +164,11 @@ class AppState {
 			items = items.filter((r) => r.status === 'taken');
 		} else if (this.filters.status === 'reserved') {
 			items = items.filter((r) => r.status === 'reserved');
+		}
+
+		// Hide errors filter
+		if (this.filters.hideErrors) {
+			items = items.filter((r) => r.status !== 'error');
 		}
 
 		// TLD filter
@@ -248,6 +255,15 @@ class AppState {
 		return count;
 	}
 
+	/** Count of error results (unfiltered) */
+	get errorCount(): number {
+		let count = 0;
+		for (const r of this.results.values()) {
+			if (r.status === 'error') count++;
+		}
+		return count;
+	}
+
 	/** Whether any filter is active */
 	get hasActiveFilters(): boolean {
 		return (
@@ -256,7 +272,8 @@ class AppState {
 			this.filters.mutations.size > 0 ||
 			this.filters.lengthMin > 0 ||
 			this.filters.lengthMax < 99 ||
-			this.filters.search.length > 0
+			this.filters.search.length > 0 ||
+			this.filters.hideErrors
 		);
 	}
 
@@ -311,6 +328,7 @@ class AppState {
 			lengthMin: 0,
 			lengthMax: 99,
 			search: '',
+			hideErrors: false,
 		};
 		this.persist();
 	}
@@ -440,6 +458,104 @@ class AppState {
 	/** Get count of saved domains in a list */
 	getListCount(listId: string): number {
 		return this.saved.filter((s) => s.listId === listId).length;
+	}
+
+	// --- Retry methods ---
+
+	/** Re-check a single domain (for retrying errors) */
+	async recheckDomain(domain: string) {
+		const existing = this.results.get(domain);
+		if (!existing) return;
+
+		// Set to checking state
+		const updated = new Map(this.results);
+		updated.set(domain, { ...existing, status: 'checking', error: undefined });
+		this.results = updated;
+
+		try {
+			const res = await fetch('/api/check', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ domains: [domain] }),
+			});
+			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string; error?: string }> };
+			if (data.results?.[0]) {
+				const r = data.results[0];
+				const next = new Map(this.results);
+				const entry = next.get(domain);
+				if (entry) {
+					next.set(domain, {
+						...entry,
+						records: r.records,
+						status: r.status as DomainResult['status'],
+						error: r.error,
+						checkedAt: Date.now(),
+					});
+					this.results = next;
+				}
+			}
+		} catch {
+			// Restore error state on fetch failure
+			const next = new Map(this.results);
+			const entry = next.get(domain);
+			if (entry) {
+				next.set(domain, { ...entry, status: 'error', error: 'retry failed' });
+				this.results = next;
+			}
+		}
+		this.persist();
+	}
+
+	/** Re-check all domains with error status */
+	async recheckAllErrors() {
+		const errorDomains = [...this.results.values()]
+			.filter((r) => r.status === 'error')
+			.map((r) => r.domain);
+		if (errorDomains.length === 0) return;
+
+		// Set all to checking
+		const updated = new Map(this.results);
+		for (const d of errorDomains) {
+			const entry = updated.get(d);
+			if (entry) updated.set(d, { ...entry, status: 'checking', error: undefined });
+		}
+		this.results = updated;
+
+		try {
+			const res = await fetch('/api/check', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ domains: errorDomains }),
+			});
+			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string; error?: string }> };
+			if (data.results) {
+				const next = new Map(this.results);
+				for (const r of data.results) {
+					const entry = next.get(r.domain);
+					if (entry) {
+						next.set(r.domain, {
+							...entry,
+							records: r.records,
+							status: r.status as DomainResult['status'],
+							error: r.error,
+							checkedAt: Date.now(),
+						});
+					}
+				}
+				this.results = next;
+			}
+		} catch {
+			// Restore error state on fetch failure
+			const next = new Map(this.results);
+			for (const d of errorDomains) {
+				const entry = next.get(d);
+				if (entry && entry.status === 'checking') {
+					next.set(d, { ...entry, status: 'error', error: 'retry failed' });
+				}
+			}
+			this.results = next;
+		}
+		this.persist();
 	}
 
 	/** Toggle theme */

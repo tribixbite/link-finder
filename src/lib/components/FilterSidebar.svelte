@@ -55,6 +55,30 @@
 					<span class="tabular-nums" style="color: var(--text-muted);">{opt.count}</span>
 				</button>
 			{/each}
+
+			<!-- Error row: hide toggle + retry all -->
+			{#if app.errorCount > 0}
+				<div class="flex items-center justify-between px-2 py-1 rounded text-xs" style="color: var(--warning);">
+					<label class="flex items-center gap-1.5 cursor-pointer">
+						<input
+							type="checkbox"
+							checked={app.filters.hideErrors}
+							onchange={() => app.setFilter({ hideErrors: !app.filters.hideErrors })}
+							class="accent-current"
+						/>
+						Hide errors
+					</label>
+					<div class="flex items-center gap-1.5">
+						<span class="tabular-nums" style="color: var(--text-muted);">{app.errorCount}</span>
+						<button
+							onclick={() => app.recheckAllErrors()}
+							class="text-xs px-1.5 py-0.5 rounded border-0 cursor-pointer"
+							style="background: var(--accent-muted); color: var(--accent);"
+							title="Retry all errored domains"
+						>retry all</button>
+					</div>
+				</div>
+			{/if}
 		</div>
 	</div>
 

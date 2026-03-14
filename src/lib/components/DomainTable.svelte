@@ -79,6 +79,13 @@
 				</span>
 				{#if result.status === 'available'}
 					<RegistrarMenu domain={result.domain} />
+				{:else if result.status === 'error'}
+					<button
+						onclick={() => app.recheckDomain(result.domain)}
+						class="text-xs px-1.5 py-0 rounded border-0 cursor-pointer shrink-0"
+						style="background: var(--accent-muted); color: var(--accent); font-size: 0.65rem;"
+						title={result.error || 'retry'}
+					>retry</button>
 				{/if}
 			</div>
 
