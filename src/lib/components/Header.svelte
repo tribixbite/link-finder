@@ -26,6 +26,31 @@
 			</span>
 		{/if}
 
+		<!-- Saved domains button -->
+		<button
+			onclick={() => { app.savedViewOpen = !app.savedViewOpen; }}
+			class="relative p-2 rounded-lg transition-colors cursor-pointer border-0"
+			style="background: var(--bg-tertiary); color: {app.savedCount > 0 ? 'var(--warning)' : 'var(--text-secondary)'};"
+			title="Saved domains ({app.savedCount})"
+		>
+			<!-- Star icon -->
+			{#if app.savedCount > 0}
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">
+					<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+				</svg>
+			{:else}
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+				</svg>
+			{/if}
+			{#if app.savedCount > 0}
+				<span
+					class="absolute -top-1 -right-1 min-w-4 h-4 flex items-center justify-center rounded-full text-xs font-bold px-1"
+					style="background: var(--warning); color: var(--bg-primary); font-size: 0.6rem; line-height: 1;"
+				>{app.savedCount}</span>
+			{/if}
+		</button>
+
 		<button
 			onclick={() => app.toggleTheme()}
 			class="p-2 rounded-lg transition-colors cursor-pointer border-0"

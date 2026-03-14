@@ -2,12 +2,15 @@ import { generateCandidates } from '../mutations';
 import type {
 	DomainCandidate,
 	DomainResult,
+	DomainList,
+	SavedDomain,
 	MutationType,
 	Filters,
 	SortField,
 	SortDir,
+	TldPricing,
 } from '../types';
-import { DEFAULT_TLDS, DEFAULT_MUTATIONS } from '../types';
+import { DEFAULT_TLDS, DEFAULT_MUTATIONS, LIST_COLORS } from '../types';
 
 /** Parse terms from user input (comma, newline, or space separated) */
 function parseTerms(input: string): string[] {
@@ -95,6 +98,15 @@ class AppState {
 		}
 	})());
 
+	// --- Pricing state (fetched per session, not persisted) ---
+	pricing = $state<Map<string, TldPricing>>(new Map());
+
+	// --- Saved domains / lists (restored from localStorage) ---
+	lists = $state<DomainList[]>(safeParse('lists', [] as DomainList[]));
+	saved = $state<SavedDomain[]>(safeParse('saved', [] as SavedDomain[]));
+	savedViewOpen = $state(false);
+	savedFilterListId = $state<string | null>(null);
+
 	// --- View state (restored from localStorage) ---
 	sort = $state<{ field: SortField; dir: SortDir }>(safeParse('sort', { field: 'status' as SortField, dir: 'asc' as SortDir }));
 	viewMode = $state<'card' | 'table'>(safeParse('viewMode', 'card' as const));
@@ -121,6 +133,9 @@ class AppState {
 			// Serialize results Map (skip 'checking' status entries)
 			const entries = [...this.results.entries()].filter(([, r]) => r.status !== 'checking');
 			localStorage.setItem(LS + 'results', JSON.stringify(entries));
+			// Persist saved domains and lists
+			localStorage.setItem(LS + 'lists', JSON.stringify(this.lists));
+			localStorage.setItem(LS + 'saved', JSON.stringify(this.saved));
 		} catch {
 			// localStorage full or unavailable — silently ignore
 		}
@@ -329,6 +344,104 @@ class AppState {
 		this.persist();
 	}
 
+	// --- Pricing methods ---
+
+	/** Fetch TLD pricing from API and populate the pricing map */
+	async fetchPricing() {
+		try {
+			const res = await fetch('/api/pricing');
+			const data = await res.json() as { pricing: Record<string, TldPricing> };
+			if (data.pricing) {
+				const map = new Map<string, TldPricing>();
+				for (const [tld, p] of Object.entries(data.pricing)) {
+					map.set(tld, p);
+				}
+				this.pricing = map;
+			}
+		} catch {
+			// Pricing is optional — silently fail
+		}
+	}
+
+	/** Get registration price for a TLD (e.g. ".com" → "9.73") or null */
+	getPrice(tld: string): string | null {
+		const key = tld.startsWith('.') ? tld.slice(1) : tld;
+		const entry = this.pricing.get(key);
+		return entry?.registration ?? null;
+	}
+
+	// --- Saved domain / list CRUD ---
+
+	/** Total saved domain count */
+	get savedCount(): number {
+		return this.saved.length;
+	}
+
+	/** Create a new list with auto-assigned color */
+	createList(name: string): DomainList {
+		const list: DomainList = {
+			id: crypto.randomUUID(),
+			name,
+			color: LIST_COLORS[this.lists.length % LIST_COLORS.length],
+			createdAt: Date.now(),
+		};
+		this.lists = [...this.lists, list];
+		this.persist();
+		return list;
+	}
+
+	/** Rename a list */
+	renameList(id: string, name: string) {
+		this.lists = this.lists.map((l) => (l.id === id ? { ...l, name } : l));
+		this.persist();
+	}
+
+	/** Delete a list and all its saved domains */
+	deleteList(id: string) {
+		this.lists = this.lists.filter((l) => l.id !== id);
+		this.saved = this.saved.filter((s) => s.listId !== id);
+		this.persist();
+	}
+
+	/** Save a domain to a list */
+	saveDomain(domain: string, listId: string, status: SavedDomain['status']) {
+		// Don't duplicate
+		if (this.saved.some((s) => s.domain === domain && s.listId === listId)) return;
+		this.saved = [...this.saved, { domain, listId, status, addedAt: Date.now() }];
+		this.persist();
+	}
+
+	/** Remove a domain from a list (or all lists if listId omitted) */
+	unsaveDomain(domain: string, listId?: string) {
+		if (listId) {
+			this.saved = this.saved.filter((s) => !(s.domain === domain && s.listId === listId));
+		} else {
+			this.saved = this.saved.filter((s) => s.domain !== domain);
+		}
+		this.persist();
+	}
+
+	/** Check if domain is saved in any list */
+	isDomainSaved(domain: string): boolean {
+		return this.saved.some((s) => s.domain === domain);
+	}
+
+	/** Get all list IDs a domain is saved in */
+	getListsForDomain(domain: string): string[] {
+		return this.saved.filter((s) => s.domain === domain).map((s) => s.listId);
+	}
+
+	/** Get saved domains, optionally filtered by list */
+	getSavedDomains(listId?: string | null): SavedDomain[] {
+		if (listId) return this.saved.filter((s) => s.listId === listId);
+		return this.saved;
+	}
+
+	/** Get count of saved domains in a list */
+	getListCount(listId: string): number {
+		return this.saved.filter((s) => s.listId === listId).length;
+	}
+
 	/** Toggle theme */
 	toggleTheme() {
 		this.theme = this.theme === 'dark' ? 'light' : 'dark';
@@ -336,13 +449,15 @@ class AppState {
 		localStorage.setItem('digr-theme', this.theme);
 	}
 
-	/** Initialize theme from localStorage and bind visibility persistence */
+	/** Initialize theme from localStorage, fetch pricing, bind visibility persistence */
 	initTheme() {
 		const saved = localStorage.getItem('digr-theme') as 'dark' | 'light' | null;
 		if (saved) {
 			this.theme = saved;
 			document.documentElement.setAttribute('data-theme', saved);
 		}
+		// Fetch TLD pricing (non-blocking)
+		this.fetchPricing();
 		// Persist state when user switches away from app (mobile tab switch, home button)
 		document.addEventListener('visibilitychange', () => {
 			if (document.visibilityState === 'hidden') this.persist();

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { app } from '$lib/state/app.svelte';
 	import { MUTATION_INFO } from '$lib/types';
 	import type { DomainResult } from '$lib/types';
 
@@ -7,6 +8,11 @@
 	}
 
 	let { result }: Props = $props();
+
+	import RegistrarMenu from './RegistrarMenu.svelte';
+	import SaveBookmarkButton from './SaveBookmarkButton.svelte';
+
+	let price = $derived(app.getPrice(result.tld));
 
 	const statusColors: Record<string, string> = {
 		available: 'var(--available)',
@@ -24,10 +30,6 @@
 		error: '!',
 	};
 
-	/** Build Namecheap registration URL for available domains */
-	function registrarUrl(domain: string): string {
-		return `https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(domain)}`;
-	}
 </script>
 
 <div
@@ -45,21 +47,14 @@
 					aria-label={result.status}
 				>{statusIcons[result.status]}</span>
 
+				<span
+					class="text-sm font-semibold truncate"
+					style="color: var(--text-primary); font-family: ui-monospace, monospace;"
+					title={result.domain}
+				>{result.name}<span style="color: var(--text-muted);">{result.tld}</span></span>
+
 				{#if result.status === 'available'}
-					<a
-						href={registrarUrl(result.domain)}
-						target="_blank"
-						rel="noopener"
-						class="text-sm font-semibold truncate no-underline hover:underline"
-						style="color: var(--text-primary); font-family: ui-monospace, monospace;"
-						title="Register {result.domain} at Namecheap"
-					>{result.name}<span style="color: var(--text-muted);">{result.tld}</span></a>
-				{:else}
-					<span
-						class="text-sm font-semibold truncate"
-						style="color: var(--text-primary); font-family: ui-monospace, monospace;"
-						title={result.domain}
-					>{result.name}<span style="color: var(--text-muted);">{result.tld}</span></span>
+					<RegistrarMenu domain={result.domain} />
 				{/if}
 			</div>
 
@@ -70,16 +65,22 @@
 					style="background: var(--bg-tertiary); color: var(--text-muted);"
 				>{MUTATION_INFO[result.mutation].label}</span>
 				<span class="text-xs tabular-nums" style="color: var(--text-muted);">{result.nameLength}ch</span>
+				{#if price}
+					<span class="text-xs tabular-nums font-medium" style="color: var(--success);">${price}/yr</span>
+				{/if}
 			</div>
 		</div>
 
-		<!-- Status badge -->
-		<span
-			class="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
-			style="background: color-mix(in srgb, {statusColors[result.status]} 15%, transparent); color: {statusColors[result.status]};"
-		>
-			{result.status}
-		</span>
+		<!-- Actions -->
+		<div class="flex items-center gap-1 shrink-0">
+			<SaveBookmarkButton {result} />
+			<span
+				class="text-xs font-medium px-2 py-0.5 rounded-full"
+				style="background: color-mix(in srgb, {statusColors[result.status]} 15%, transparent); color: {statusColors[result.status]};"
+			>
+				{result.status}
+			</span>
+		</div>
 	</div>
 
 	<!-- DNS records (if taken) -->

@@ -17,6 +17,14 @@
 		{ field: 'length', label: 'Len', class: 'w-12 text-right' },
 	];
 
+	/** Get formatted price for a TLD */
+	function getPrice(tld: string): string | null {
+		return app.getPrice(tld);
+	}
+
+	import RegistrarMenu from './RegistrarMenu.svelte';
+	import SaveBookmarkButton from './SaveBookmarkButton.svelte';
+
 	const statusColors: Record<string, string> = {
 		available: 'var(--available)',
 		taken: 'var(--taken)',
@@ -24,10 +32,6 @@
 		checking: 'var(--accent)',
 		error: 'var(--warning)',
 	};
-
-	function registrarUrl(domain: string): string {
-		return `https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(domain)}`;
-	}
 </script>
 
 <div class="rounded-lg overflow-hidden" style="border: 1px solid var(--border);">
@@ -48,6 +52,8 @@
 				{/if}
 			</button>
 		{/each}
+		<div class="w-16 text-right hidden sm:block" style="color: var(--text-muted);">Price</div>
+		<div class="w-7"></div>
 	</div>
 
 	<!-- Table rows -->
@@ -67,13 +73,12 @@
 			</div>
 
 			<!-- Domain -->
-			<div class="flex-1 min-w-[140px] truncate" style="font-family: ui-monospace, monospace;" title={result.domain}>
-				{#if result.status === 'available'}
-					<a href={registrarUrl(result.domain)} target="_blank" rel="noopener" class="no-underline hover:underline">
-						<span style="color: var(--text-primary);">{result.name}</span><span style="color: var(--text-muted);">{result.tld}</span>
-					</a>
-				{:else}
+			<div class="flex-1 min-w-[140px] flex items-center gap-1.5" style="font-family: ui-monospace, monospace;" title={result.domain}>
+				<span class="truncate">
 					<span style="color: var(--text-primary);">{result.name}</span><span style="color: var(--text-muted);">{result.tld}</span>
+				</span>
+				{#if result.status === 'available'}
+					<RegistrarMenu domain={result.domain} />
 				{/if}
 			</div>
 
@@ -85,6 +90,18 @@
 
 			<!-- Length -->
 			<div class="w-12 text-right tabular-nums" style="color: var(--text-muted);">{result.nameLength}</div>
+
+			<!-- Price -->
+			<div class="w-16 text-right tabular-nums hidden sm:block" style="color: var(--success); font-size: 0.7rem;">
+				{#if getPrice(result.tld)}
+					${getPrice(result.tld)}
+				{/if}
+			</div>
+
+			<!-- Save -->
+			<div class="w-7">
+				<SaveBookmarkButton {result} />
+			</div>
 		</div>
 	{/each}
 </div>

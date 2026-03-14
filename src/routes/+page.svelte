@@ -8,6 +8,7 @@
 	import ResultToolbar from '$lib/components/ResultToolbar.svelte';
 	import DomainCard from '$lib/components/DomainCard.svelte';
 	import DomainTable from '$lib/components/DomainTable.svelte';
+	import SavedPanel from '$lib/components/SavedPanel.svelte';
 
 	const INITIAL_BATCH = 60;
 	const LOAD_MORE = 80;
@@ -135,4 +136,9 @@
 	<footer class="text-center py-3 text-xs" style="color: var(--text-muted); border-top: 1px solid var(--border);">
 		digr — domain search tool &mdash; dig DNS lookups on Termux
 	</footer>
+
+	<!-- Saved domains panel overlay -->
+	{#if app.savedViewOpen}
+		<SavedPanel />
+	{/if}
 </div>

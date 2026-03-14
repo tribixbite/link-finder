@@ -84,3 +84,40 @@ export interface Filters {
 /** Sort options */
 export type SortField = 'domain' | 'name' | 'tld' | 'mutation' | 'status' | 'length';
 export type SortDir = 'asc' | 'desc';
+
+/** TLD pricing from Porkbun */
+export interface TldPricing {
+	registration: string;
+	renewal: string;
+}
+
+/** Saved domain list */
+export interface DomainList {
+	id: string;
+	name: string;
+	color: string;
+	createdAt: number;
+}
+
+/** A domain saved to a list */
+export interface SavedDomain {
+	domain: string;
+	listId: string;
+	status: 'available' | 'taken' | 'reserved' | 'error';
+	addedAt: number;
+	notes?: string;
+}
+
+/** Preset colors for domain lists */
+export const LIST_COLORS = [
+	'#06b6d4', // cyan
+	'#22c55e', // green
+	'#eab308', // yellow
+	'#ef4444', // red
+	'#a855f7', // purple
+	'#ec4899', // pink
+	'#f97316', // orange
+	'#3b82f6', // blue
+	'#14b8a6', // teal
+	'#6366f1', // indigo
+] as const;

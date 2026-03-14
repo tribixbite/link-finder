@@ -14,8 +14,11 @@ const MAX_CONCURRENT_DIG = 12;
 const MAX_CONCURRENT_WHOIS = 4; // whois servers rate-limit aggressively
 const DIG_TIMEOUT_MS = 5000;
 const WHOIS_TIMEOUT_MS = 8000;
+const WHOIS_MAX_RETRIES = 3;
+const WHOIS_RETRY_DELAY_MS = 1000;
 const MAX_DOMAINS_PER_REQUEST = 500;
 const VALID_DOMAIN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z]{2,})+$/i;
+const PRICING_TTL_MS = 60 * 60 * 1000; // 1 hour cache
 
 interface CheckRequest {
 	domains: string[];
@@ -99,10 +102,9 @@ async function digCheck(domain: string): Promise<{ nxdomain: boolean; records: s
 }
 
 /**
- * Phase 2: Whois verification — confirms whether an NXDOMAIN domain is
- * actually available, reserved, or registered-but-no-dns.
+ * Single whois attempt — runs `whois` once and parses the output.
  */
-async function whoisCheck(domain: string): Promise<'available' | 'taken' | 'reserved' | 'error'> {
+async function whoisCheckOnce(domain: string): Promise<'available' | 'taken' | 'reserved' | 'error'> {
 	try {
 		const proc = Bun.spawn(['whois', domain], {
 			stdout: 'pipe',
@@ -144,6 +146,23 @@ async function whoisCheck(domain: string): Promise<'available' | 'taken' | 'rese
 	}
 }
 
+/**
+ * Phase 2: Whois verification with retry — retries up to WHOIS_MAX_RETRIES
+ * times with WHOIS_RETRY_DELAY_MS between attempts to handle transient
+ * timeouts from rate-limiting whois servers.
+ */
+async function whoisCheck(domain: string): Promise<'available' | 'taken' | 'reserved' | 'error'> {
+	for (let attempt = 1; attempt <= WHOIS_MAX_RETRIES; attempt++) {
+		const result = await whoisCheckOnce(domain);
+		if (result !== 'error') return result;
+		// Don't delay after the last attempt
+		if (attempt < WHOIS_MAX_RETRIES) {
+			await new Promise((r) => setTimeout(r, WHOIS_RETRY_DELAY_MS));
+		}
+	}
+	return 'error';
+}
+
 /** Full domain check: dig + whois verification for NXDOMAIN results */
 async function checkDomain(domain: string): Promise<DomainCheckResult> {
 	try {
@@ -171,8 +190,8 @@ async function checkDomain(domain: string): Promise<DomainCheckResult> {
 			return { domain, records: [], status: 'available', method: 'whois' };
 		}
 
-		// Whois errored — report as available with caveat (NXDOMAIN is strong signal)
-		return { domain, records: [], status: 'available', method: 'dig', error: 'whois timeout' };
+		// Whois errored after retries — report as available with caveat (NXDOMAIN is strong signal)
+		return { domain, records: [], status: 'available', method: 'dig', error: 'whois failed after retries' };
 	} catch (err) {
 		return {
 			domain,
@@ -247,6 +266,59 @@ async function handleStream(domains: string[]): Promise<Response> {
 	});
 }
 
+/** Porkbun TLD pricing cache */
+interface TldPricingEntry {
+	registration: string;
+	renewal: string;
+}
+let _pricingCache: Record<string, TldPricingEntry> = {};
+let _pricingFetchedAt = 0;
+let _pricingPromise: Promise<void> | null = null;
+
+/** Fetch TLD pricing from Porkbun (public, no auth needed) */
+async function fetchPricing(): Promise<void> {
+	// Deduplicate concurrent fetches
+	if (_pricingPromise) return _pricingPromise;
+	_pricingPromise = (async () => {
+		try {
+			const res = await fetch('https://api.porkbun.com/api/json/v3/domain/pricing', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({}),
+			});
+			const data = await res.json() as { status: string; pricing?: Record<string, { registration?: string; renewal?: string }> };
+			if (data.status === 'SUCCESS' && data.pricing) {
+				const parsed: Record<string, TldPricingEntry> = {};
+				for (const [tld, prices] of Object.entries(data.pricing)) {
+					parsed[tld] = {
+						registration: prices.registration || '0',
+						renewal: prices.renewal || '0',
+					};
+				}
+				_pricingCache = parsed;
+				_pricingFetchedAt = Date.now();
+				console.log(`Pricing cached: ${Object.keys(parsed).length} TLDs`);
+			}
+		} catch (err) {
+			console.error('Failed to fetch pricing:', err);
+		} finally {
+			_pricingPromise = null;
+		}
+	})();
+	return _pricingPromise;
+}
+
+/** Get cached pricing, refresh if stale */
+async function getPricing(): Promise<Record<string, TldPricingEntry>> {
+	if (Date.now() - _pricingFetchedAt > PRICING_TTL_MS) {
+		await fetchPricing();
+	}
+	return _pricingCache;
+}
+
+// Pre-warm pricing cache on startup
+fetchPricing();
+
 Bun.serve({
 	port: PORT,
 	async fetch(req) {
@@ -263,6 +335,11 @@ Bun.serve({
 
 		if (url.pathname === '/api/health') {
 			return Response.json({ ok: true, pid: process.pid }, { headers: corsHeaders });
+		}
+
+		if (url.pathname === '/api/pricing' && req.method === 'GET') {
+			const pricing = await getPricing();
+			return Response.json({ pricing }, { headers: corsHeaders });
 		}
 
 		if ((url.pathname === '/api/check' || url.pathname === '/api/stream') && req.method === 'POST') {
@@ -291,4 +368,5 @@ Bun.serve({
 console.log(`digr API server running on http://localhost:${PORT}`);
 console.log(`  POST /api/check   — batch domain check (dig + whois)`);
 console.log(`  POST /api/stream  — SSE streaming check`);
+console.log(`  GET  /api/pricing — TLD pricing (Porkbun, 1hr cache)`);
 console.log(`  GET  /api/health  — health check`);
