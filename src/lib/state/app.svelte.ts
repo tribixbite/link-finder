@@ -1129,6 +1129,12 @@ class AppState {
 			const intervalMs = this.monitorConfig.intervalMinutes * 60 * 1000;
 			_monitorTimer = setInterval(() => this.runMonitorCheck(), intervalMs);
 		}
+		// Register service worker for PWA support
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.register('/sw.js').catch(() => {
+				// SW registration failed — non-critical
+			});
+		}
 	}
 
 	/** Flush pending SSE updates into the results map in one batch */
