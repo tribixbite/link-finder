@@ -27,7 +27,7 @@
 				<h2 class="text-sm font-semibold m-0 truncate" style="color: var(--text-primary); font-family: ui-monospace, monospace;">
 					{app.whoisPanel.domain}
 				</h2>
-				<span class="text-xs" style="color: var(--text-muted);">Whois details</span>
+				<span class="text-xs" style="color: var(--text-muted);">{app.whoisPanel.data?.source === 'rdap' ? 'RDAP' : 'Whois'} details</span>
 			</div>
 			<button
 				onclick={() => app.closeWhois()}
@@ -116,7 +116,7 @@
 							onclick={() => { showRaw = !showRaw; }}
 							class="text-xs cursor-pointer border-0 bg-transparent"
 							style="color: var(--accent);"
-						>{showRaw ? 'Hide' : 'Show'} raw whois</button>
+						>{showRaw ? 'Hide' : 'Show'} raw {data.source === 'rdap' ? 'RDAP' : 'whois'}</button>
 						{#if showRaw}
 							<pre
 								class="mt-2 p-3 rounded-lg text-xs overflow-x-auto"
