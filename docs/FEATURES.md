@@ -23,16 +23,16 @@ One-click preset groups: **Cheap** (under ~$5/yr), **Dev** (developer-friendly),
 **Files:** `SearchInput.svelte`, `types.ts:TLD_PRESETS`
 
 ### SSE Streaming
-Results stream in real-time via Server-Sent Events. Client batches UI updates every 150ms to avoid per-result reactive overhead.
+Results stream in real-time via Server-Sent Events (Local API mode) or callback-based streaming (all modes). Client batches UI updates every 150ms to avoid per-result reactive overhead.
 
-**Files:** `app.svelte.ts:search()`, `api-server.ts:handleStream()`
+**Files:** `app.svelte.ts:search()`, `api-server.ts:handleStream()`, `src/lib/resolvers/`
 
 ## Filtering & Sorting
 
 ### Status Filter
-Filter results by: All, Available, Taken, Reserved. Hide errors toggle.
+Filter results by: All, Available, Likely Available, Taken, Reserved. Hide errors toggle. `likely-available` filter shown when browser DoH results exist.
 
-**Files:** `ResultToolbar.svelte`, `app.svelte.ts:filteredResults`
+**Files:** `ResultToolbar.svelte`, `FilterSidebar.svelte`, `app.svelte.ts:filteredResults`
 
 ### TLD Filter
 Filter results to specific TLDs within the result set.
@@ -158,7 +158,7 @@ Server caches successful results for 15 minutes. Periodic cleanup every 5 minute
 **Files:** `api-server.ts:_resultCache`
 
 ### Schema Migration
-localStorage versioned with `digr-schema-version`. `runMigrations()` stub for future schema changes.
+localStorage versioned with `digr-schema-version` (current: 2). `runMigrations()` handles version upgrades. Version 2 adds `likely-available` status support (backward-compatible, no data migration needed).
 
 **Files:** `app.svelte.ts:runMigrations()`
 
@@ -238,3 +238,45 @@ Progressive Web App with offline capability. Includes `manifest.json`, app icons
 Production-ready deployment: multi-stage Dockerfile (bun + dig + whois), docker-compose.yml, deploy script. API server serves static files in production mode. Per-IP rate limiting (100 req/min). Configurable CORS origin and port via env vars.
 
 **Files:** `Dockerfile`, `docker-compose.yml`, `scripts/deploy.sh`, `api-server.ts`
+
+## Client-Side DNS Resolution
+
+### Tri-Mode Resolver
+Auto-detected on app load. Priority: Local API (probe `/api/health`, 1.5s timeout) → Edge Worker (probe `worker/health`, 3s timeout) → Browser DoH (fallback, no probe). Probes run in parallel; first success wins. User can force a mode via Settings panel.
+
+**Files:** `src/lib/resolvers/index.ts`, `src/lib/resolvers/types.ts`
+
+### Browser DoH (DNS-over-HTTPS)
+Pure client-side DNS resolution using Google, Cloudflare, and Quad9 DoH providers in round-robin. 8 concurrent requests with 20ms stagger. NXDOMAIN results marked `likely-available` until confirmed via RDAP. IANA bootstrap file cached for 24h to resolve registry RDAP URLs directly.
+
+**Files:** `src/lib/resolvers/browser-resolver.ts`
+
+### RDAP Verification
+Lazy on-demand verification triggered by clicking a `likely-available` domain card. HTTP 404 → confirmed `available`, HTTP 200 → downgraded to `taken`. Rate-limit backoff (5s) and CORS failure handled gracefully. In-flight deduplication prevents concurrent duplicate requests.
+
+**Files:** `src/lib/resolvers/browser-resolver.ts`, `DomainCard.svelte`, `DomainTable.svelte`
+
+### Edge Worker (Cloudflare)
+Server-side DoH + RDAP proxy running on Cloudflare Workers. 20 concurrent checks with streaming response. Returns authoritative `available`/`taken` status (no `likely-available`). Worker URL configurable via Settings panel, default `https://digr-dns.workers.dev`.
+
+**Files:** `src/lib/resolvers/worker-resolver.ts`, `workers/digr-worker/`
+
+### Likely-Available Status
+New intermediate domain status for unverified DoH results. Amber/yellow styling distinct from confirmed available (green). Verify button triggers RDAP check to confirm or downgrade. Separate filter option in sidebar.
+
+**Files:** `DomainCard.svelte`, `DomainTable.svelte`, `FilterSidebar.svelte`, `types.ts:DomainStatus`
+
+### Resolver Mode Badge
+Small pill in header showing active resolver mode: "Local API", "Edge Worker", or "Browser DNS". Updates reactively when mode changes or is overridden.
+
+**Files:** `Header.svelte`, `src/lib/resolvers/index.ts:MODE_LABELS`
+
+### Settings Panel
+Collapsible section in FilterSidebar for resolver configuration. Mode selector (Auto-detect / Local API / Edge Worker / Browser DNS) with descriptions. Worker URL input field (shown when Edge Worker mode selected).
+
+**Files:** `SettingsPanel.svelte`, `FilterSidebar.svelte`, `app.svelte.ts:switchResolver()`
+
+### Offline Detection
+Monitors `navigator.onLine` and `online`/`offline` events. Shows warning banner in header when offline. Disables search when no network available.
+
+**Files:** `Header.svelte`, `app.svelte.ts:isOffline`

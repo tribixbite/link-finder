@@ -1,7 +1,7 @@
 # digr — Domain Name Search Tool
 
 ## Project Overview
-SvelteKit 5 SPA with adapter-static for domain availability search. Generates name candidates from terms × mutations × TLDs, checks via `dig` + `whois` subprocess calls. Built for Termux on Android.
+SvelteKit 5 SPA with adapter-static for domain availability search. Generates name candidates from terms × mutations × TLDs, checks availability via a tri-mode resolver: local API (dig+whois), Cloudflare Worker edge proxy, or browser-native DNS-over-HTTPS + RDAP. Built for Termux on Android, but the deployed static site works without any backend.
 
 ## Tech Stack
 - **Runtime**: Bun (dev server + API server)
@@ -11,13 +11,16 @@ SvelteKit 5 SPA with adapter-static for domain availability search. Generates na
 - **Platform**: Termux/Android with `postinstall.sh` for native module fixes
 
 ## Architecture
-- **Two-process model**: SvelteKit dev (5173) + Bun API server (3001)
+- **Tri-mode resolver**: Local API (dig+whois) → Edge Worker (Cloudflare DoH+RDAP) → Browser DoH (fallback)
+- **Auto-detection**: Probes run in parallel on load; first success wins. User can force mode via Settings.
+- **Two-process model** (Local API mode): SvelteKit dev (5173) + Bun API server (3001)
 - **Central state**: `AppState` singleton in `src/lib/state/app.svelte.ts`
-- **Module-level vars**: timers/AbortControllers outside class to avoid Svelte 5 proxy issues
-- **SSE streaming**: results via `/api/stream` with 150ms client-side batched flush
+- **Module-level vars**: timers/AbortControllers/resolver outside class to avoid Svelte 5 proxy issues
+- **Streaming results**: resolver.check() callback with 150ms client-side batched flush
 - **13 mutation types** including compound pairs, domain hacks, custom `{term}` patterns
 - **Production mode**: API server serves static files when `NODE_ENV=production`
 - **Docker**: multi-stage Dockerfile with `dig` + `whois` in Alpine runtime
+- **Edge Worker**: Cloudflare Worker at `workers/digr-worker/` (deploy from non-Termux machine)
 
 ## Commands
 ```bash
@@ -31,8 +34,15 @@ bun run preview    # Preview production build
 ## Key Files
 - `src/lib/state/app.svelte.ts` — central reactive state (AppState class)
 - `src/lib/mutations.ts` — candidate generation, domain hacks, compound
-- `src/lib/types.ts` — all interfaces, MutationType union, MUTATION_INFO, TLD lists
+- `src/lib/types.ts` — all interfaces, DomainStatus, ResolverMode, MutationType union
+- `src/lib/resolvers/` — tri-mode resolver module:
+  - `types.ts` — Resolver interface, ResolverResult, DoH/RDAP types
+  - `browser-resolver.ts` — DoH round-robin + RDAP verification
+  - `api-resolver.ts` — SSE stream wrapper for local API
+  - `worker-resolver.ts` — Cloudflare Worker client
+  - `index.ts` — detectMode(), createResolver(), MODE_LABELS
 - `scripts/api-server.ts` — Bun HTTP server with dig/whois, SSE, rate limiting
+- `workers/digr-worker/` — Cloudflare Worker (DoH+RDAP edge proxy)
 - `src/lib/components/` — Svelte 5 components (DomainCard, SearchInput, FilterSidebar, etc.)
 - `docs/` — ARCHITECTURE.md, API.md, MUTATIONS.md, FEATURES.md, DEPLOY.md
 
@@ -52,7 +62,11 @@ bun run preview    # Preview production build
 - Commit messages: conventional commits, sign with emdash + model version (no co-authored-by)
 
 ## localStorage Keys
-All prefixed `digr-`. Schema version at `digr-schema-version`. Max 2000 results persisted.
+All prefixed `digr-`. Schema version at `digr-schema-version` (current: 2). Max 2000 results persisted.
+
+Resolver keys:
+- `digr-resolver-mode` — forced resolver mode override (`local-api` | `edge-worker` | `browser-doh`)
+- `digr-worker-url` — custom Cloudflare Worker URL (default: `https://digr-dns.workers.dev`)
 
 ## Environment Variables
 | Variable | Default | Description |

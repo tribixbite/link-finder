@@ -2,49 +2,82 @@
 
 ## Overview
 
-digr is a domain availability search tool that generates name candidates from user-supplied terms, mutations, and TLDs, then checks availability via `dig` and `whois` subprocess calls. Built for Termux on Android.
+digr is a domain availability search tool that generates name candidates from user-supplied terms, mutations, and TLDs, then checks availability via a tri-mode resolver: local API (dig+whois), Cloudflare Worker edge proxy, or browser-native DNS-over-HTTPS + RDAP. Built for Termux on Android, but the deployed static site works without any backend.
 
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│  SvelteKit SPA (port 5173)                  │
-│  ┌─────────────┐  ┌──────────────────────┐  │
-│  │ SearchInput  │  │ FilterSidebar        │  │
-│  │ + mutations  │  │ + TLD/mutation chips │  │
-│  └──────┬───────┘  └──────────┬───────────┘  │
-│         │ candidates          │ filters       │
-│  ┌──────▼─────────────────────▼───────────┐  │
-│  │         AppState singleton             │  │
-│  │  (Svelte 5 runes: $state, $derived)    │  │
-│  │  results Map, filters, saved, pricing  │  │
-│  └──────┬─────────────────────┬───────────┘  │
-│         │ SSE /api/stream     │ persist()    │
-│         │                     ▼              │
-│  ┌──────▼───────┐   ┌─────────────┐         │
-│  │ Result Cards │   │ localStorage│         │
-│  │ or Table     │   │ (2000 max)  │         │
-│  └──────────────┘   └─────────────┘         │
-└──────────────┬──────────────────────────────┘
-               │ fetch /api/*
+┌─────────────────────────────────────────────────────┐
+│  SvelteKit SPA (port 5173)                          │
+│  ┌─────────────┐  ┌──────────────────────┐          │
+│  │ SearchInput  │  │ FilterSidebar        │          │
+│  │ + mutations  │  │ + TLD/mutation chips │          │
+│  └──────┬───────┘  │ + SettingsPanel      │          │
+│         │           └──────────┬───────────┘          │
+│  ┌──────▼─────────────────────▼───────────┐          │
+│  │         AppState singleton             │          │
+│  │  (Svelte 5 runes: $state, $derived)    │          │
+│  │  results Map, filters, saved, pricing  │          │
+│  └──────┬─────────────────────┬───────────┘          │
+│         │ resolver.check()    │ persist()            │
+│         │                     ▼                      │
+│  ┌──────▼───────┐   ┌─────────────┐                 │
+│  │ Result Cards │   │ localStorage│                 │
+│  │ or Table     │   │ (2000 max)  │                 │
+│  └──────────────┘   └─────────────┘                 │
+└──────────────┬──────────────────────────────────────┘
+               │ Resolver Interface
                ▼
-┌─────────────────────────────────────────────┐
-│  Bun API Server (port 3001)                 │
-│  ┌──────────────┐  ┌─────────────────────┐  │
-│  │ POST /stream │  │ GET /pricing        │  │
-│  │ POST /check  │  │ GET /whois          │  │
-│  │              │  │ GET /health         │  │
-│  └──────┬───────┘  └─────────────────────┘  │
-│         │                                    │
-│  ┌──────▼───────┐  ┌─────────────────────┐  │
-│  │   dig DNS    │  │   whois verify      │  │
-│  │ (12 conc.)   │  │   (4 conc.)         │  │
-│  └──────────────┘  └─────────────────────┘  │
-│  Dedup · 15min cache · rate limit · per-TLD │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  Tri-Mode Resolver (auto-detected on load)           │
+│                                                      │
+│  Mode 1: Local API (probe /api/health, 1.5s)         │
+│  ┌──────────────────────────────────────────────┐    │
+│  │  Bun API Server (port 3001)                  │    │
+│  │  dig DNS (12 conc.) + whois verify (4 conc.) │    │
+│  │  Dedup · 15min cache · rate limit · per-TLD  │    │
+│  └──────────────────────────────────────────────┘    │
+│                                                      │
+│  Mode 2: Edge Worker (probe worker/health, 3s)       │
+│  ┌──────────────────────────────────────────────┐    │
+│  │  Cloudflare Worker (digr-dns.workers.dev)    │    │
+│  │  Server-side DoH + RDAP (no CORS issues)     │    │
+│  │  20 concurrent checks, streaming response    │    │
+│  └──────────────────────────────────────────────┘    │
+│                                                      │
+│  Mode 3: Browser DoH (fallback, no probe needed)     │
+│  ┌──────────────────────────────────────────────┐    │
+│  │  DNS-over-HTTPS: Google/Cloudflare/Quad9     │    │
+│  │  Round-robin, 8 concurrent, 20ms stagger     │    │
+│  │  RDAP verification on-demand (lazy)          │    │
+│  │  Returns 'likely-available' until verified    │    │
+│  └──────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────┘
 ```
 
-## Two-Process Model
+## Resolver Architecture
+
+All DNS/WHOIS operations go through a `Resolver` interface (`src/lib/resolvers/types.ts`). Three implementations exist:
+
+| Mode | Probe | Backend | Status Accuracy | WHOIS |
+|------|-------|---------|----------------|-------|
+| Local API | `/api/health` (1.5s) | Bun server, dig+whois | Authoritative | Full whois text |
+| Edge Worker | `worker/health` (3s) | Cloudflare Worker | Authoritative (DoH+RDAP) | RDAP JSON |
+| Browser DoH | Fallback (no probe) | None (pure client-side) | `likely-available` until RDAP verified | RDAP JSON |
+
+Auto-detection runs on app load: probes run in parallel, first success wins. User can force a mode via Settings panel (persisted to `digr-resolver-mode` in localStorage).
+
+### Resolver Module (`src/lib/resolvers/`)
+
+| File | Purpose |
+|------|---------|
+| `types.ts` | `Resolver` interface, `ResolverResult`, `DohProvider`, `DohResponse`, `RdapResponse` |
+| `browser-resolver.ts` | DoH round-robin + RDAP verification + IANA bootstrap caching |
+| `api-resolver.ts` | SSE stream parser wrapping local API server |
+| `worker-resolver.ts` | Stream parser for Cloudflare Worker edge proxy |
+| `index.ts` | `detectMode()`, `createResolver()`, `MODE_LABELS` |
+
+### Two-Process Model (Local API mode)
 
 | Process | Port | Role |
 |---------|------|------|
@@ -53,12 +86,14 @@ digr is a domain availability search tool that generates name candidates from us
 
 In production, the API server can serve static files directly (`NODE_ENV=production`) or be paired with a reverse proxy. Docker deployment available via `Dockerfile` and `docker-compose.yml`.
 
+**Without API server:** The deployed static site auto-detects no backend and falls back to Browser DoH mode.
+
 ## Component Hierarchy
 
 ```
 +page.svelte
 ├── Header.svelte
-│   └── theme toggle, monitor panel toggle, saved panel toggle
+│   └── theme toggle, resolver mode badge, offline banner, monitor/saved toggles
 ├── SearchInput.svelte
 │   ├── terms textarea, TLD chips, mutation chips
 │   ├── TLD presets (Cheap / Dev / ccTLDs)
@@ -70,7 +105,8 @@ In production, the API server can serve static files directly (`NODE_ENV=product
 ├── FilterPills.svelte
 │   └── active filter indicators with remove buttons
 ├── FilterSidebar.svelte
-│   └── TLD filter chips, mutation filter chips, length range, registrar filter
+│   ├── TLD filter chips, mutation filter chips, length range, registrar filter
+│   └── SettingsPanel.svelte (resolver mode override, worker URL)
 ├── DomainCard.svelte / DomainTable.svelte
 │   ├── bulk selection checkbox, status icon, domain name, copy button
 │   ├── RegistrarMenu.svelte (available domains)
@@ -107,16 +143,18 @@ Central reactive store using Svelte 5 runes:
 | Whois | `whoisPanel` (domain, loading, data, error) | session only |
 | Selection | `selectedDomains` (Set) | session only |
 | Monitor | `monitorEntries`, `monitorConfig` | localStorage |
+| Resolver | `resolverMode`, `resolverReady`, `isOffline` | `digr-resolver-mode` in localStorage |
 | View | `sort`, `viewMode`, `theme`, `sidebarOpen` | localStorage |
 
 ### Module-Level Variables
 
 Timers and AbortControllers are kept outside the class to avoid Svelte 5's reactive proxy wrapping:
 
-- `_abortController` — SSE cancellation
+- `_abortController` — search cancellation
 - `_pendingUpdates`, `_flushTimer` — 150ms batched result updates
 - `_persistInputTimer` — debounced input persistence
 - `_monitorTimer` — periodic domain monitoring interval
+- `_resolver` — active `Resolver` instance (initialized in `initTheme()`)
 
 ### Toast Store (`src/lib/state/toasts.svelte.ts`)
 
@@ -130,10 +168,14 @@ Lightweight notification system: `toasts.success()`, `toasts.error()`, `toasts.i
 2. `app.candidates` (derived) generates `DomainCandidate[]` via `generateCandidates()`
 3. User clicks "Dig" → `app.search()`
 4. All candidates set to `status: 'checking'` in results Map
-5. POST `/api/stream` with domain list
-6. Server runs `dig` (12 concurrent) then `whois` (4 concurrent) per NXDOMAIN domain
-7. SSE events stream back; client batches updates every 150ms via `_flushUpdates()`
-8. Final results persisted to localStorage
+5. `resolver.check(domains, onResult, signal)` invoked on the active resolver
+6. Results stream back via `onResult` callback; client batches updates every 150ms via `_flushUpdates()`
+7. Final results persisted to localStorage
+
+Behavior varies by resolver mode:
+- **Local API**: POST `/api/stream` → dig (12 conc.) + whois (4 conc.) → authoritative `available`/`taken`
+- **Edge Worker**: POST `worker/check` → server-side DoH + RDAP → authoritative `available`/`taken`
+- **Browser DoH**: Client-side DoH round-robin (8 conc.) → `likely-available` for NXDOMAIN, lazy RDAP verify on click
 
 ### Two-Phase Availability Check
 
@@ -163,12 +205,14 @@ All keys prefixed with `digr-`. Schema version tracked at `digr-schema-version`.
 | `digr-viewMode` | string | `'card'` or `'table'` |
 | `digr-lists` | DomainList[] | Bookmark lists |
 | `digr-saved` | SavedDomain[] | Saved domain entries |
-| `digr-schema-version` | number | Migration version (current: 1) |
+| `digr-schema-version` | number | Migration version (current: 2) |
 | `digr-theme` | string | `'dark'` or `'light'` |
 | `digr-history` | SearchHistoryEntry[] | Recent searches (max 50) |
 | `digr-custom-mutations` | CustomMutation[] | User-defined {term} patterns |
 | `digr-monitor-entries` | MonitorEntry[] | Tracked domains with status history |
 | `digr-monitor-config` | MonitorConfig | Monitoring enabled flag + interval |
+| `digr-resolver-mode` | ResolverMode | Forced resolver mode override (`local-api`, `edge-worker`, `browser-doh`) |
+| `digr-worker-url` | string | Custom Cloudflare Worker URL (default: `https://digr-dns.workers.dev`) |
 
 ## URL State Sharing
 
