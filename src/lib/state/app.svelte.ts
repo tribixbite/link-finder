@@ -17,8 +17,11 @@ import type {
 	WhoisData,
 	MonitorEntry,
 	MonitorConfig,
+	ResolverMode,
 } from '../types';
 import { DEFAULT_TLDS, DEFAULT_MUTATIONS, LIST_COLORS, REGISTRARS } from '../types';
+import { detectMode, createResolver, MODE_LABELS } from '../resolvers';
+import type { Resolver, ResolverResult } from '../resolvers';
 
 /** Parse terms from user input (comma, newline, or space separated) */
 function parseTerms(input: string): string[] {
@@ -32,7 +35,7 @@ function parseTerms(input: string): string[] {
 const LS = 'digr-';
 
 /** Current schema version — bump when localStorage shape changes */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /** Maximum number of results to persist (prune oldest by checkedAt) */
 const MAX_STORED_RESULTS = 2000;
@@ -48,6 +51,8 @@ let _flushTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastProgress = 0;
 let _persistInputTimer: ReturnType<typeof setTimeout> | null = null;
 let _monitorTimer: ReturnType<typeof setInterval> | null = null;
+/** Active resolver instance — initialized in initTheme(), falls back to browser-doh */
+let _resolver: Resolver | null = null;
 
 /** Max search history entries */
 const MAX_HISTORY = 50;
@@ -163,6 +168,10 @@ class AppState {
 	monitorConfig = $state<MonitorConfig>(safeParse('monitor-config', { enabled: false, intervalMinutes: 1440 }));
 	monitorPanelOpen = $state(false);
 
+	// --- Resolver state ---
+	resolverMode = $state<ResolverMode>('browser-doh');
+	resolverReady = $state(false);
+
 	/** Persist current state to localStorage */
 	persist() {
 		try {
@@ -221,6 +230,8 @@ class AppState {
 		// Status filter
 		if (this.filters.status === 'available') {
 			items = items.filter((r) => r.status === 'available');
+		} else if (this.filters.status === 'likely-available') {
+			items = items.filter((r) => r.status === 'likely-available');
 		} else if (this.filters.status === 'taken') {
 			items = items.filter((r) => r.status === 'taken');
 		} else if (this.filters.status === 'reserved') {
@@ -287,7 +298,7 @@ class AppState {
 					cmp = a.mutation.localeCompare(b.mutation) || a.name.localeCompare(b.name);
 					break;
 				case 'status': {
-					const order: Record<string, number> = { available: 0, checking: 1, error: 2, reserved: 3, taken: 4 };
+					const order: Record<string, number> = { available: 0, 'likely-available': 1, checking: 2, error: 3, reserved: 4, taken: 5 };
 					cmp = order[a.status] - order[b.status] || a.domain.localeCompare(b.domain);
 					break;
 				}
@@ -312,6 +323,15 @@ class AppState {
 		let count = 0;
 		for (const r of this.results.values()) {
 			if (r.status === 'available') count++;
+		}
+		return count;
+	}
+
+	/** Count of likely-available results (unfiltered) */
+	get likelyAvailableCount(): number {
+		let count = 0;
+		for (const r of this.results.values()) {
+			if (r.status === 'likely-available') count++;
 		}
 		return count;
 	}
@@ -358,8 +378,7 @@ class AppState {
 			.filter((r) => r.status !== 'checking' && isStale(r.checkedAt));
 		if (staleEntries.length === 0) return;
 
-		// Capture pre-recheck statuses for change detection
-		const oldStatuses = new Map<string, DomainResult['previousStatus']>(staleEntries.map((r) => [r.domain, r.status as DomainResult['previousStatus']]));
+		const oldStatuses = new Map(staleEntries.map((r) => [r.domain, r.status]));
 		const staleDomains = staleEntries.map((r) => r.domain);
 
 		// Set all stale to checking
@@ -371,35 +390,30 @@ class AppState {
 		this.results = updated;
 
 		try {
-			const res = await fetch('/api/check', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ domains: staleDomains }),
-			});
-			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string; error?: string }> };
-			if (data.results) {
-				let changed = 0;
-				const next = new Map(this.results);
-				for (const r of data.results) {
-					const entry = next.get(r.domain);
-					if (entry) {
-						const oldStatus = oldStatuses.get(r.domain);
-						const newStatus = r.status as DomainResult['status'];
-						const statusChanged = oldStatus && oldStatus !== newStatus;
-						if (statusChanged) changed++;
-						next.set(r.domain, {
-							...entry,
-							records: r.records,
-							status: newStatus,
-							error: r.error,
-							checkedAt: Date.now(),
-							previousStatus: statusChanged ? oldStatus : entry.previousStatus,
-						});
-					}
+			const resolver = this.getResolver();
+			const resultMap = new Map<string, ResolverResult>();
+			await resolver.check(staleDomains, (r) => { resultMap.set(r.domain, r); });
+
+			let changed = 0;
+			const next = new Map(this.results);
+			for (const [domain, r] of resultMap) {
+				const entry = next.get(domain);
+				if (entry) {
+					const oldStatus = oldStatuses.get(domain);
+					const statusChanged = oldStatus && oldStatus !== r.status;
+					if (statusChanged) changed++;
+					next.set(domain, {
+						...entry,
+						records: r.records,
+						status: r.status,
+						error: r.error,
+						checkedAt: Date.now(),
+						previousStatus: statusChanged ? oldStatus : entry.previousStatus,
+					});
 				}
-				this.results = next;
-				toasts.success(`Rechecked ${staleDomains.length} stale${changed > 0 ? `, ${changed} changed` : ''}`);
 			}
+			this.results = next;
+			toasts.success(`Rechecked ${staleDomains.length} stale${changed > 0 ? `, ${changed} changed` : ''}`);
 		} catch {
 			const next = new Map(this.results);
 			for (const d of staleDomains) {
@@ -595,27 +609,43 @@ class AppState {
 
 	// --- Pricing methods ---
 
-	/** Fetch TLD pricing + registrar TLD support from API */
+	/** Fetch TLD pricing + registrar TLD support from API or Porkbun direct */
 	async fetchPricing() {
 		try {
-			const res = await fetch('/api/pricing');
-			const data = await res.json() as {
-				pricing: Record<string, TldPricing>;
-				registrars: Record<string, string[]>;
-			};
-			if (data.pricing) {
+			// Try local API first if in that mode
+			if (_resolver?.mode === 'local-api') {
+				const res = await fetch('/api/pricing');
+				const data = await res.json() as {
+					pricing: Record<string, TldPricing>;
+					registrars: Record<string, string[]>;
+				};
+				if (data.pricing) {
+					const map = new Map<string, TldPricing>();
+					for (const [tld, p] of Object.entries(data.pricing)) map.set(tld, p);
+					this.pricing = map;
+				}
+				if (data.registrars) {
+					const rmap = new Map<RegistrarId, Set<string>>();
+					for (const [rid, tlds] of Object.entries(data.registrars)) rmap.set(rid as RegistrarId, new Set(tlds));
+					this.registrarTlds = rmap;
+				}
+				return;
+			}
+
+			// Direct Porkbun API call (public, CORS-enabled)
+			const res = await fetch('https://api.porkbun.com/api/json/v3/domain/pricing', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({}),
+			});
+			const data = await res.json() as { status: string; pricing?: Record<string, { registration?: string; renewal?: string }> };
+			if (data.status === 'SUCCESS' && data.pricing) {
 				const map = new Map<string, TldPricing>();
-				for (const [tld, p] of Object.entries(data.pricing)) {
-					map.set(tld, p);
+				for (const [tld, prices] of Object.entries(data.pricing)) {
+					map.set(tld, { registration: prices.registration || '0', renewal: prices.renewal || '0' });
 				}
 				this.pricing = map;
-			}
-			if (data.registrars) {
-				const rmap = new Map<RegistrarId, Set<string>>();
-				for (const [rid, tlds] of Object.entries(data.registrars)) {
-					rmap.set(rid as RegistrarId, new Set(tlds));
-				}
-				this.registrarTlds = rmap;
+				// TODO: Porkbun TLDs only — other registrar TLD lists are in api-server.ts
 			}
 		} catch {
 			// Pricing is optional — silently fail
@@ -739,29 +769,21 @@ class AppState {
 		this.results = updated;
 
 		try {
-			const res = await fetch('/api/check', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ domains: [domain] }),
-			});
-			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string; error?: string }> };
-			if (data.results?.[0]) {
-				const r = data.results[0];
-				const next = new Map(this.results);
-				const entry = next.get(domain);
-				if (entry) {
-					const newStatus = r.status as DomainResult['status'];
-					const statusChanged = oldStatus && oldStatus !== newStatus;
-					next.set(domain, {
-						...entry,
-						records: r.records,
-						status: newStatus,
-						error: r.error,
-						checkedAt: Date.now(),
-						previousStatus: statusChanged ? oldStatus : entry.previousStatus,
-					});
-					this.results = next;
-				}
+			const resolver = this.getResolver();
+			const result = await resolver.verify(domain);
+			const next = new Map(this.results);
+			const entry = next.get(domain);
+			if (entry) {
+				const statusChanged = oldStatus && oldStatus !== result.status;
+				next.set(domain, {
+					...entry,
+					records: result.records,
+					status: result.status,
+					error: result.error,
+					checkedAt: Date.now(),
+					previousStatus: statusChanged ? oldStatus : entry.previousStatus,
+				});
+				this.results = next;
 			}
 		} catch {
 			// Restore error state on fetch failure
@@ -777,11 +799,10 @@ class AppState {
 
 	/** Re-check all domains with error status */
 	async recheckAllErrors() {
-		const errorEntries = [...this.results.values()]
-			.filter((r) => r.status === 'error');
+		const errorEntries = [...this.results.values()].filter((r) => r.status === 'error');
 		if (errorEntries.length === 0) return;
 
-		const oldStatuses = new Map<string, DomainResult['previousStatus']>(errorEntries.map((r) => [r.domain, r.status as DomainResult['previousStatus']]));
+		const oldStatuses = new Map(errorEntries.map((r) => [r.domain, r.status]));
 		const errorDomains = errorEntries.map((r) => r.domain);
 
 		// Set all to checking
@@ -793,37 +814,31 @@ class AppState {
 		this.results = updated;
 
 		try {
-			const res = await fetch('/api/check', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ domains: errorDomains }),
-			});
-			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string; error?: string }> };
-			if (data.results) {
-				let resolved = 0;
-				const next = new Map(this.results);
-				for (const r of data.results) {
-					const entry = next.get(r.domain);
-					if (entry) {
-						const oldStatus = oldStatuses.get(r.domain);
-						const newStatus = r.status as DomainResult['status'];
-						const statusChanged = oldStatus && oldStatus !== newStatus;
-						if (newStatus !== 'error') resolved++;
-						next.set(r.domain, {
-							...entry,
-							records: r.records,
-							status: newStatus,
-							error: r.error,
-							checkedAt: Date.now(),
-							previousStatus: statusChanged ? oldStatus : entry.previousStatus,
-						});
-					}
+			const resolver = this.getResolver();
+			const resultMap = new Map<string, ResolverResult>();
+			await resolver.check(errorDomains, (r) => { resultMap.set(r.domain, r); });
+
+			let resolved = 0;
+			const next = new Map(this.results);
+			for (const [domain, r] of resultMap) {
+				const entry = next.get(domain);
+				if (entry) {
+					const oldStatus = oldStatuses.get(domain);
+					const statusChanged = oldStatus && oldStatus !== r.status;
+					if (r.status !== 'error') resolved++;
+					next.set(domain, {
+						...entry,
+						records: r.records,
+						status: r.status,
+						error: r.error,
+						checkedAt: Date.now(),
+						previousStatus: statusChanged ? oldStatus : entry.previousStatus,
+					});
 				}
-				this.results = next;
-				toasts.success(`Retried ${errorDomains.length} errors, ${resolved} resolved`);
 			}
+			this.results = next;
+			toasts.success(`Retried ${errorDomains.length} errors, ${resolved} resolved`);
 		} catch {
-			// Restore error state on fetch failure
 			const next = new Map(this.results);
 			for (const d of errorDomains) {
 				const entry = next.get(d);
@@ -917,16 +932,19 @@ class AppState {
 	async openWhois(domain: string) {
 		this.whoisPanel = { domain, loading: true, data: null, error: null };
 		try {
-			const res = await fetch(`/api/whois?domain=${encodeURIComponent(domain)}`);
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const data = await res.json() as WhoisData;
-			this.whoisPanel = { domain, loading: false, data, error: null };
+			const resolver = this.getResolver();
+			const data = await resolver.lookup(domain);
+			if (data) {
+				this.whoisPanel = { domain, loading: false, data, error: null };
+			} else {
+				this.whoisPanel = { domain, loading: false, data: null, error: 'Lookup returned no data' };
+			}
 		} catch (err) {
 			this.whoisPanel = {
 				domain,
 				loading: false,
 				data: null,
-				error: err instanceof Error ? err.message : 'Whois lookup failed',
+				error: err instanceof Error ? err.message : 'Lookup failed',
 			};
 		}
 	}
@@ -1010,7 +1028,7 @@ class AppState {
 			domain,
 			status: result?.status ?? 'error',
 			lastChecked: Date.now(),
-			history: [{ status: result?.status ?? 'unknown', checkedAt: Date.now() }],
+			history: [{ status: result?.status ?? 'error', checkedAt: Date.now() }],
 		};
 		this.monitorEntries = [...this.monitorEntries, entry];
 		this.persist();
@@ -1033,20 +1051,27 @@ class AppState {
 		if (this.monitorEntries.length === 0) return;
 		const domains = this.monitorEntries.map((e) => e.domain);
 		try {
-			const res = await fetch('/api/check', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ domains }),
-			});
-			const data = await res.json() as { results: Array<{ domain: string; records: string[]; status: string }> };
-			if (!data.results) return;
+			const resolver = this.getResolver();
+			const resultMap = new Map<string, ResolverResult>();
+			await resolver.check(domains, (r) => { resultMap.set(r.domain, r); });
+
+			// In browser-doh mode, auto-verify likely-available monitor entries via RDAP
+			if (resolver.mode === 'browser-doh') {
+				for (const [domain, r] of resultMap) {
+					if (r.status === 'likely-available') {
+						const verified = await resolver.verify(domain);
+						resultMap.set(domain, verified);
+					}
+				}
+			}
+
 			let changed = 0;
 			const next = [...this.monitorEntries];
-			for (const r of data.results) {
-				const idx = next.findIndex((e) => e.domain === r.domain);
+			for (const [domain, r] of resultMap) {
+				const idx = next.findIndex((e) => e.domain === domain);
 				if (idx < 0) continue;
 				const entry = next[idx];
-				const newStatus = r.status as MonitorEntry['status'];
+				const newStatus = r.status;
 				if (entry.status !== newStatus) changed++;
 				next[idx] = {
 					...entry,
@@ -1135,9 +1160,80 @@ class AppState {
 				// SW registration failed — non-critical
 			});
 		}
+		// Detect and initialize resolver
+		detectMode().then((mode) => {
+			this.resolverMode = mode;
+			_resolver = createResolver(mode);
+			this.resolverReady = true;
+		});
 	}
 
-	/** Flush pending SSE updates into the results map in one batch */
+	/** Get the active resolver (falls back to browser-doh if not yet initialized) */
+	private getResolver(): Resolver {
+		if (!_resolver) {
+			_resolver = createResolver('browser-doh');
+		}
+		return _resolver;
+	}
+
+	/** Switch resolver mode (for settings UI) */
+	switchResolver(mode: ResolverMode) {
+		this.resolverMode = mode;
+		_resolver = createResolver(mode);
+		try {
+			localStorage.setItem('digr-resolver-mode', mode);
+		} catch { /* ignore */ }
+	}
+
+	/** Clear forced resolver mode (revert to auto-detection) */
+	clearResolverOverride() {
+		try {
+			localStorage.removeItem('digr-resolver-mode');
+		} catch { /* ignore */ }
+		detectMode().then((mode) => {
+			this.resolverMode = mode;
+			_resolver = createResolver(mode);
+		});
+	}
+
+	/** Verify a likely-available domain via RDAP (upgrades or downgrades status) */
+	async verifyDomain(domain: string) {
+		const existing = this.results.get(domain);
+		if (!existing || existing.status !== 'likely-available') return;
+
+		const updated = new Map(this.results);
+		updated.set(domain, { ...existing, status: 'checking' });
+		this.results = updated;
+
+		try {
+			const resolver = this.getResolver();
+			const result = await resolver.verify(domain);
+			const next = new Map(this.results);
+			const entry = next.get(domain);
+			if (entry) {
+				next.set(domain, {
+					...entry,
+					status: result.status,
+					records: result.records,
+					error: result.error,
+					method: result.method,
+					checkedAt: Date.now(),
+					previousStatus: 'likely-available',
+				});
+				this.results = next;
+			}
+		} catch {
+			const next = new Map(this.results);
+			const entry = next.get(domain);
+			if (entry) {
+				next.set(domain, { ...entry, status: 'likely-available', error: 'verification failed' });
+				this.results = next;
+			}
+		}
+		this.persist();
+	}
+
+	/** Flush pending resolver updates into the results map in one batch */
 	_flushUpdates() {
 		if (_pendingUpdates.length === 0) return;
 		const updated = new Map(this.results);
@@ -1160,7 +1256,7 @@ class AppState {
 		this.persist();
 	}
 
-	/** Start domain search using SSE streaming */
+	/** Start domain search using active resolver */
 	async search() {
 		const candidates = this.candidates;
 		if (candidates.length === 0) return;
@@ -1183,74 +1279,27 @@ class AppState {
 
 		try {
 			const domains = candidates.map((c) => c.domain);
-			const res = await fetch('/api/stream', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ domains }),
-				signal,
-			});
+			const resolver = this.getResolver();
+			let done = 0;
 
-			const reader = res.body!.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				buffer = lines.pop() || '';
-
-				for (const line of lines) {
-					if (!line.startsWith('data: ')) continue;
-					try {
-						const event = JSON.parse(line.slice(6));
-						if (event.type === 'result') {
-							_pendingUpdates.push({
-								domain: event.domain,
-								records: event.records,
-								status: event.status,
-								error: event.error,
-							});
-							_lastProgress = event.progress;
-							// Batch flush every 150ms to avoid per-result reactive updates
-							if (!_flushTimer) {
-								_flushTimer = setTimeout(() => this._flushUpdates(), 150);
-							}
-						}
-					} catch {
-						// skip malformed events
-					}
+			await resolver.check(domains, (result) => {
+				done++;
+				_pendingUpdates.push({
+					domain: result.domain,
+					records: result.records,
+					status: result.status,
+					error: result.error,
+				});
+				_lastProgress = done;
+				// Batch flush every 150ms to avoid per-result reactive updates
+				if (!_flushTimer) {
+					_flushTimer = setTimeout(() => this._flushUpdates(), 150);
 				}
-			}
+			}, signal);
 
 			// Flush any remaining buffered updates
 			if (_flushTimer) clearTimeout(_flushTimer);
 			this._flushUpdates();
-
-			// Process any remaining partial buffer
-			if (buffer.startsWith('data: ')) {
-				try {
-					const event = JSON.parse(buffer.slice(6));
-					if (event.type === 'result') {
-						const existing = this.results.get(event.domain);
-						if (existing) {
-							const updated = new Map(this.results);
-							updated.set(event.domain, {
-								...existing,
-								records: event.records,
-								status: event.status,
-								error: event.error,
-								checkedAt: Date.now(),
-							});
-							this.results = updated;
-						}
-					}
-				} catch {
-					// partial event at end of stream — expected
-				}
-			}
 		} catch (err) {
 			if (signal.aborted) return; // cancelled intentionally
 			console.error('Search error:', err);
@@ -1292,10 +1341,10 @@ class AppState {
 		this.persist();
 	}
 
-	/** Export available domains as text */
+	/** Export available (and likely-available) domains as text */
 	exportAvailable(): string {
 		return this.filteredResults
-			.filter((r) => r.status === 'available')
+			.filter((r) => r.status === 'available' || r.status === 'likely-available')
 			.map((r) => r.domain)
 			.join('\n');
 	}
