@@ -74,7 +74,7 @@
 		<!-- Copy available -->
 		<button
 			onclick={copyAvailable}
-			disabled={app.availableCount === 0}
+			disabled={app.availableCount === 0 && app.likelyAvailableCount === 0}
 			class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
 			style="background: var(--bg-tertiary); color: var(--text-secondary);"
 			title="Copy available domains to clipboard"

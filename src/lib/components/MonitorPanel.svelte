@@ -10,6 +10,7 @@
 
 	const statusColors: Record<string, string> = {
 		available: 'var(--available)',
+		'likely-available': 'var(--warning)',
 		taken: 'var(--taken)',
 		reserved: 'var(--warning)',
 		checking: 'var(--accent)',

@@ -31,7 +31,7 @@
 		if (savedListIds.includes(listId)) {
 			app.unsaveDomain(result.domain, listId);
 		} else {
-			app.saveDomain(result.domain, listId, result.status === 'checking' ? 'available' : result.status as any);
+			app.saveDomain(result.domain, listId, result.status === 'checking' ? 'available' : result.status);
 		}
 	}
 
@@ -39,7 +39,7 @@
 		const name = newListName.trim();
 		if (!name) return;
 		const list = app.createList(name);
-		app.saveDomain(result.domain, list.id, result.status === 'checking' ? 'available' : result.status as any);
+		app.saveDomain(result.domain, list.id, result.status === 'checking' ? 'available' : result.status);
 		newListName = '';
 	}
 </script>
