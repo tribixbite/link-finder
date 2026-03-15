@@ -43,11 +43,12 @@
 			{#each [
 				{ value: 'all', label: 'All', count: app.results.size },
 				{ value: 'available', label: 'Available', count: app.availableCount },
+				...(app.likelyAvailableCount > 0 ? [{ value: 'likely-available', label: 'Likely avail.', count: app.likelyAvailableCount }] : []),
 				{ value: 'taken', label: 'Taken', count: app.takenCount },
 				...(app.reservedCount > 0 ? [{ value: 'reserved', label: 'Reserved', count: app.reservedCount }] : []),
 			] as opt}
 				<button
-					onclick={() => app.setStatusFilter(opt.value as 'all' | 'available' | 'taken' | 'reserved')}
+					onclick={() => app.setStatusFilter(opt.value as 'all' | 'available' | 'likely-available' | 'taken' | 'reserved')}
 					class="flex items-center justify-between w-full px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors"
 					style="background: {app.filters.status === opt.value ? 'var(--accent-muted)' : 'transparent'}; color: {app.filters.status === opt.value ? 'var(--accent)' : 'var(--text-secondary)'};"
 				>
