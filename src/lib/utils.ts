@@ -26,7 +26,7 @@ export interface URLSearchState {
 	tlds?: string[];
 	mutations?: MutationType[];
 	sort?: { field: SortField; dir: SortDir };
-	status?: 'all' | 'available' | 'taken' | 'reserved';
+	status?: 'all' | 'available' | 'likely-available' | 'taken' | 'reserved';
 }
 
 /** Encode current search state into URL search params */
@@ -64,7 +64,7 @@ export function decodeSearchParams(search: string): URLSearchState | null {
 	}
 
 	const status = params.get('status');
-	if (status === 'available' || status === 'taken' || status === 'reserved') {
+	if (status === 'available' || status === 'likely-available' || status === 'taken' || status === 'reserved') {
 		state.status = status;
 	}
 

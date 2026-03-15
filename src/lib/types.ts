@@ -215,7 +215,7 @@ export interface DomainList {
 export interface SavedDomain {
 	domain: string;
 	listId: string;
-	status: DomainStatus;
+	status: Exclude<DomainStatus, 'checking'>;
 	addedAt: number;
 	notes?: string;
 }
@@ -287,7 +287,7 @@ export interface MonitorEntry {
 	domain: string;
 	status: DomainResult['status'];
 	lastChecked: number;
-	history: { status: string; checkedAt: number }[];
+	history: { status: DomainStatus; checkedAt: number }[];
 }
 
 /** Domain monitoring configuration */
