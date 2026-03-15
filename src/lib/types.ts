@@ -187,6 +187,8 @@ export interface Filters {
 	mutations: Set<MutationType>;
 	lengthMin: number;
 	lengthMax: number;
+	priceRenewalMin: number;
+	priceRenewalMax: number;
 	search: string;
 	hideErrors: boolean;
 	/** Only show domains whose TLD is sold by ALL selected registrars */
@@ -194,7 +196,7 @@ export interface Filters {
 }
 
 /** Sort options */
-export type SortField = 'domain' | 'name' | 'tld' | 'mutation' | 'status' | 'length' | 'price';
+export type SortField = 'domain' | 'name' | 'tld' | 'mutation' | 'status' | 'length' | 'price' | 'renewal';
 export type SortDir = 'asc' | 'desc';
 
 /** TLD pricing from Porkbun */

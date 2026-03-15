@@ -22,9 +22,9 @@
 
 	function exportCsv() {
 		const rows = app.filteredResults.map((r) =>
-			[r.domain, r.status, r.tld, r.mutation, r.nameLength, r.term, r.records.join(' ')].join(',')
+			[r.domain, r.status, r.tld, r.mutation, r.nameLength, r.term, app.getPrice(r.tld) ?? '', app.getRenewalPrice(r.tld) ?? '', r.records.join(' ')].join(',')
 		);
-		const csv = ['domain,status,tld,mutation,length,term,records', ...rows].join('\n');
+		const csv = ['domain,status,tld,mutation,length,term,reg_price,renewal_price,records', ...rows].join('\n');
 		const blob = new Blob([csv], { type: 'text/csv' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');

@@ -33,6 +33,13 @@
 			</span>
 		{/if}
 
+		{#if app.filters.priceRenewalMin > 0 || app.filters.priceRenewalMax < 9999}
+			<span class="filter-pill">
+				renewal: ${app.filters.priceRenewalMin}–${app.filters.priceRenewalMax}
+				<button onclick={() => { app.filters = { ...app.filters, priceRenewalMin: 0, priceRenewalMax: 9999 }; }}>&times;</button>
+			</span>
+		{/if}
+
 		{#if app.filters.hideErrors}
 			<span class="filter-pill">
 				hiding errors

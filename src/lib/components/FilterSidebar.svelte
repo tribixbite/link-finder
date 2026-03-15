@@ -176,6 +176,36 @@
 		</div>
 	</div>
 
+	<!-- Renewal price filter -->
+	{#if app.pricing.size > 0}
+		<div>
+			<span class="block text-xs font-medium mb-1.5" style="color: var(--text-muted);">Renewal price ($/yr)</span>
+			<div class="flex items-center gap-2">
+				<input
+					type="number"
+					min="0"
+					max="9999"
+					step="0.01"
+					value={app.filters.priceRenewalMin}
+					oninput={(e) => app.setFilter({ priceRenewalMin: parseFloat((e.target as HTMLInputElement).value) || 0 })}
+					class="w-14 px-2 py-1 rounded text-xs text-center border-0"
+					style="background: var(--bg-tertiary); color: var(--text-primary); outline: none;"
+				/>
+				<span class="text-xs" style="color: var(--text-muted);">to</span>
+				<input
+					type="number"
+					min="0"
+					max="9999"
+					step="0.01"
+					value={app.filters.priceRenewalMax}
+					oninput={(e) => app.setFilter({ priceRenewalMax: parseFloat((e.target as HTMLInputElement).value) || 9999 })}
+					class="w-14 px-2 py-1 rounded text-xs text-center border-0"
+					style="background: var(--bg-tertiary); color: var(--text-primary); outline: none;"
+				/>
+			</div>
+		</div>
+	{/if}
+
 	<!-- Clear filters -->
 	{#if app.hasActiveFilters}
 		<button

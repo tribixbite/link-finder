@@ -20,6 +20,7 @@ import type {
 	ResolverMode,
 } from '../types';
 import { DEFAULT_TLDS, DEFAULT_MUTATIONS, LIST_COLORS, REGISTRARS } from '../types';
+import { SPACESHIP_TLDS, NAMECHEAP_TLDS, CLOUDFLARE_TLDS } from '../registrar-tlds';
 import { detectMode, createResolver, MODE_LABELS } from '../resolvers';
 import type { Resolver, ResolverResult } from '../resolvers';
 
@@ -112,7 +113,7 @@ class AppState {
 
 	// --- Filter state (restored from localStorage) ---
 	filters = $state<Filters>((() => {
-		const defaults: Filters = { status: 'all', tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, search: '', hideErrors: false, registrars: new Set<RegistrarId>() };
+		const defaults: Filters = { status: 'all', tlds: new Set<string>(), mutations: new Set<MutationType>(), lengthMin: 0, lengthMax: 99, priceRenewalMin: 0, priceRenewalMax: 9999, search: '', hideErrors: false, registrars: new Set<RegistrarId>() };
 		try {
 			const raw = localStorage.getItem(LS + 'filters');
 			if (raw === null) return defaults;
@@ -123,6 +124,8 @@ class AppState {
 				mutations: new Set<MutationType>(parsed.mutations || []),
 				lengthMin: parsed.lengthMin ?? 0,
 				lengthMax: parsed.lengthMax ?? 99,
+				priceRenewalMin: parsed.priceRenewalMin ?? 0,
+				priceRenewalMax: parsed.priceRenewalMax ?? 9999,
 				search: parsed.search || '',
 				hideErrors: parsed.hideErrors ?? false,
 				registrars: new Set<RegistrarId>(parsed.registrars || []),
@@ -190,6 +193,8 @@ class AppState {
 				mutations: [...this.filters.mutations],
 				lengthMin: this.filters.lengthMin,
 				lengthMax: this.filters.lengthMax,
+				priceRenewalMin: this.filters.priceRenewalMin,
+				priceRenewalMax: this.filters.priceRenewalMax,
 				search: this.filters.search,
 				hideErrors: this.filters.hideErrors,
 				registrars: [...this.filters.registrars],
@@ -284,6 +289,15 @@ class AppState {
 			});
 		}
 
+		// Renewal price filter
+		if (this.filters.priceRenewalMin > 0 || this.filters.priceRenewalMax < 9999) {
+			items = items.filter((r) => {
+				const renewal = parseFloat(this.getRenewalPrice(r.tld) ?? '');
+				if (isNaN(renewal)) return true; // keep domains with no pricing data
+				return renewal >= this.filters.priceRenewalMin && renewal <= this.filters.priceRenewalMax;
+			});
+		}
+
 		// Sort
 		items.sort((a, b) => {
 			let cmp = 0;
@@ -312,6 +326,12 @@ class AppState {
 					const pa = parseFloat(this.getPrice(a.tld) ?? '') || Infinity;
 					const pb = parseFloat(this.getPrice(b.tld) ?? '') || Infinity;
 					cmp = pa - pb || a.domain.localeCompare(b.domain);
+					break;
+				}
+				case 'renewal': {
+					const ra = parseFloat(this.getRenewalPrice(a.tld) ?? '') || Infinity;
+					const rb = parseFloat(this.getRenewalPrice(b.tld) ?? '') || Infinity;
+					cmp = ra - rb || a.domain.localeCompare(b.domain);
 					break;
 				}
 			}
@@ -518,6 +538,8 @@ class AppState {
 			this.filters.mutations.size > 0 ||
 			this.filters.lengthMin > 0 ||
 			this.filters.lengthMax < 99 ||
+			this.filters.priceRenewalMin > 0 ||
+			this.filters.priceRenewalMax < 9999 ||
 			this.filters.search.length > 0 ||
 			this.filters.hideErrors ||
 			this.filters.registrars.size > 0
@@ -574,6 +596,8 @@ class AppState {
 			mutations: new Set(),
 			lengthMin: 0,
 			lengthMax: 99,
+			priceRenewalMin: 0,
+			priceRenewalMax: 9999,
 			search: '',
 			hideErrors: false,
 			registrars: new Set(),
@@ -644,11 +668,19 @@ class AppState {
 			const data = await res.json() as { status: string; pricing?: Record<string, { registration?: string; renewal?: string }> };
 			if (data.status === 'SUCCESS' && data.pricing) {
 				const map = new Map<string, TldPricing>();
+				const porkbunTlds: string[] = [];
 				for (const [tld, prices] of Object.entries(data.pricing)) {
 					map.set(tld, { registration: prices.registration || '0', renewal: prices.renewal || '0' });
+					porkbunTlds.push(tld);
 				}
 				this.pricing = map;
-				// TODO: Porkbun TLDs only — other registrar TLD lists are in api-server.ts
+				// Build registrar TLD support from Porkbun response + curated lists
+				const rmap = new Map<RegistrarId, Set<string>>();
+				rmap.set('porkbun', new Set(porkbunTlds));
+				rmap.set('namecheap', new Set(NAMECHEAP_TLDS));
+				rmap.set('spaceship', new Set(SPACESHIP_TLDS));
+				rmap.set('cloudflare', new Set(CLOUDFLARE_TLDS));
+				this.registrarTlds = rmap;
 			}
 		} catch {
 			// Pricing is optional — silently fail
@@ -660,6 +692,13 @@ class AppState {
 		const key = tld.startsWith('.') ? tld.slice(1) : tld;
 		const entry = this.pricing.get(key);
 		return entry?.registration ?? null;
+	}
+
+	/** Get renewal price for a TLD (e.g. ".com" → "10.18") or null */
+	getRenewalPrice(tld: string): string | null {
+		const key = tld.startsWith('.') ? tld.slice(1) : tld;
+		const entry = this.pricing.get(key);
+		return entry?.renewal ?? null;
 	}
 
 	/** Get registrar IDs that support a given TLD (e.g. ".com" → ['namecheap','porkbun','cloudflare','spaceship']) */

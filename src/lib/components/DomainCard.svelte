@@ -14,6 +14,7 @@
 	import SaveBookmarkButton from './SaveBookmarkButton.svelte';
 
 	let price = $derived(app.getPrice(result.tld));
+	let renewalPrice = $derived(app.getRenewalPrice(result.tld));
 	let pricingTooltip = $derived(() => {
 		const tldKey = result.tld.startsWith('.') ? result.tld.slice(1) : result.tld;
 		const entry = app.pricing.get(tldKey);
@@ -109,7 +110,9 @@
 				>{MUTATION_INFO[result.mutation].label}</span>
 				<span class="text-xs tabular-nums" style="color: var(--text-muted);">{result.nameLength}ch</span>
 				{#if price}
-					<span class="text-xs tabular-nums font-medium" style="color: var(--success);" title={pricingTooltip()}>${price}/yr</span>
+					<span class="text-xs tabular-nums font-medium" style="color: var(--success);" title={pricingTooltip()}>
+						${price}{#if renewalPrice && renewalPrice !== price}<span style="color: var(--warning);"> / ${renewalPrice} ren</span>{:else}/yr{/if}
+					</span>
 				{/if}
 				{#if result.previousStatus && result.previousStatus !== result.status}
 					<span class="text-xs px-1 rounded" style="background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning);" title="Previously {result.previousStatus}">was {result.previousStatus}</span>

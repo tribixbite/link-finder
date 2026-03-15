@@ -16,12 +16,18 @@
 		{ field: 'tld', label: 'TLD', class: 'w-16' },
 		{ field: 'mutation', label: 'Mutation', class: 'w-24 hidden sm:block' },
 		{ field: 'length', label: 'Len', class: 'w-12 text-right' },
-		{ field: 'price', label: 'Price', class: 'w-16 text-right hidden sm:block' },
+		{ field: 'price', label: 'Reg', class: 'w-16 text-right hidden sm:block' },
+		{ field: 'renewal', label: 'Ren', class: 'w-16 text-right hidden sm:block' },
 	];
 
-	/** Get formatted price for a TLD */
+	/** Get formatted registration price for a TLD */
 	function getPrice(tld: string): string | null {
 		return app.getPrice(tld);
+	}
+
+	/** Get formatted renewal price for a TLD */
+	function getRenewalPrice(tld: string): string | null {
+		return app.getRenewalPrice(tld);
 	}
 
 	/** Get pricing tooltip for a TLD (registration + renewal) */
@@ -172,10 +178,17 @@
 			<!-- Length -->
 			<div class="w-12 text-right tabular-nums" style="color: var(--text-muted);">{result.nameLength}</div>
 
-			<!-- Price -->
+			<!-- Reg price -->
 			<div class="w-16 text-right tabular-nums hidden sm:block" style="color: var(--success); font-size: 0.7rem;" title={getPricingTooltip(result.tld)}>
 				{#if getPrice(result.tld)}
 					${getPrice(result.tld)}
+				{/if}
+			</div>
+
+			<!-- Renewal price -->
+			<div class="w-16 text-right tabular-nums hidden sm:block" style="color: var(--warning); font-size: 0.7rem;" title={getPricingTooltip(result.tld)}>
+				{#if getRenewalPrice(result.tld)}
+					${getRenewalPrice(result.tld)}
 				{/if}
 			</div>
 

@@ -36,6 +36,8 @@
 		app.filters.mutations.size;
 		app.filters.lengthMin;
 		app.filters.lengthMax;
+		app.filters.priceRenewalMin;
+		app.filters.priceRenewalMax;
 		visibleCount = INITIAL_BATCH;
 	});
 
