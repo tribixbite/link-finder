@@ -14,20 +14,29 @@ export interface DomainCandidate {
 	nameLength: number;
 }
 
+/** Shared domain status — used across results, saved domains, and monitoring */
+export type DomainStatus = 'available' | 'likely-available' | 'taken' | 'reserved' | 'error' | 'checking';
+
+/** How the domain status was determined */
+export type DomainMethod = 'dig' | 'whois' | 'doh' | 'rdap' | 'worker';
+
+/** Active resolver mode */
+export type ResolverMode = 'local-api' | 'edge-worker' | 'browser-doh';
+
 /** Result of checking a domain's availability */
 export interface DomainResult extends DomainCandidate {
 	/** DNS records found (empty = no records) */
 	records: string[];
 	/** Availability status */
-	status: 'available' | 'taken' | 'reserved' | 'error' | 'checking';
+	status: DomainStatus;
 	/** How the status was determined */
-	method?: 'dig' | 'whois';
+	method?: DomainMethod;
 	/** Error message if status is 'error' */
 	error?: string;
 	/** Timestamp of check */
 	checkedAt?: number;
 	/** Previous status before recheck (only set when status changed) */
-	previousStatus?: 'available' | 'taken' | 'reserved' | 'error';
+	previousStatus?: DomainStatus;
 }
 
 /** Supported mutation types */
@@ -173,7 +182,7 @@ export const DEFAULT_MUTATIONS = new Set<MutationType>(['original', 'dropLastVow
 
 /** Filter state for results */
 export interface Filters {
-	status: 'all' | 'available' | 'taken' | 'reserved';
+	status: 'all' | 'available' | 'likely-available' | 'taken' | 'reserved';
 	tlds: Set<string>;
 	mutations: Set<MutationType>;
 	lengthMin: number;
@@ -206,7 +215,7 @@ export interface DomainList {
 export interface SavedDomain {
 	domain: string;
 	listId: string;
-	status: 'available' | 'taken' | 'reserved' | 'error';
+	status: DomainStatus;
 	addedAt: number;
 	notes?: string;
 }
@@ -255,9 +264,10 @@ export interface CustomMutation {
 	pattern: string;
 }
 
-/** Whois detail data returned from /api/whois */
+/** Whois/RDAP detail data */
 export interface WhoisData {
 	domain: string;
+	/** Raw text (whois) or JSON string (RDAP) */
 	raw: string;
 	parsed: {
 		registrar?: string;
@@ -268,6 +278,8 @@ export interface WhoisData {
 		status?: string[];
 	};
 	fetchedAt: number;
+	/** Data source */
+	source?: 'whois' | 'rdap';
 }
 
 /** Domain monitoring entry — tracks status changes over time */
