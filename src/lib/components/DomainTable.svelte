@@ -52,6 +52,7 @@
 
 	const statusColors: Record<string, string> = {
 		available: 'var(--available)',
+		'likely-available': 'var(--warning)',
 		taken: 'var(--taken)',
 		reserved: 'var(--warning)',
 		checking: 'var(--accent)',
@@ -124,9 +125,17 @@
 					style="background: transparent; color: {copiedDomains.has(result.domain) ? 'var(--success)' : 'var(--text-muted)'}; font-size: 0.6rem; padding: 0;"
 					title="Copy domain"
 				>{copiedDomains.has(result.domain) ? '\u2713' : '\u2398'}</button>
-				{#if result.status === 'available'}
+				{#if result.status === 'available' || result.status === 'likely-available'}
+					{#if result.status === 'likely-available'}
+						<button
+							onclick={() => app.verifyDomain(result.domain)}
+							class="text-xs px-1 py-0 rounded border-0 cursor-pointer shrink-0"
+							style="background: var(--accent-muted); color: var(--accent); font-size: 0.6rem;"
+							title="Verify availability via RDAP"
+						>verify</button>
+					{/if}
 					<RegistrarMenu domain={result.domain} />
-				{:else if result.status === 'taken' || result.status === 'reserved'}
+				{:else if result.status === 'taken' || result.status === 'reserved' || result.status === 'likely-available'}
 					<button
 						onclick={() => app.openWhois(result.domain)}
 						class="text-xs px-1 py-0 rounded border-0 cursor-pointer shrink-0"
