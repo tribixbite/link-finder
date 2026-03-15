@@ -42,8 +42,14 @@ let _bootstrapCache: Map<string, string> | null = null;
 let _bootstrapFetchedAt = 0;
 const BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
+/** Deduplicate concurrent bootstrap fetches */
+let _bootstrapFetch: Promise<Map<string, string>> | null = null;
+
 /** Track RDAP rate limiting per-TLD */
 const _rdapBackoff = new Map<string, number>();
+
+/** Track in-flight RDAP verifications to prevent duplicate requests */
+const _rdapInflight = new Set<string>();
 
 /** Round-robin counter */
 let _providerIdx = 0;
@@ -102,23 +108,32 @@ async function loadBootstrap(): Promise<Map<string, string>> {
 	if (_bootstrapCache && Date.now() - _bootstrapFetchedAt < BOOTSTRAP_TTL_MS) {
 		return _bootstrapCache;
 	}
-	try {
-		const res = await fetch(IANA_BOOTSTRAP_URL);
-		const data = await res.json() as { services: Array<[string[], string[]]> };
-		const map = new Map<string, string>();
-		for (const [tlds, urls] of data.services) {
-			const baseUrl = urls[0]; // first URL is preferred
-			for (const tld of tlds) {
-				map.set(tld.toLowerCase(), baseUrl);
+
+	// Deduplicate concurrent fetches
+	if (_bootstrapFetch) return _bootstrapFetch;
+
+	_bootstrapFetch = (async () => {
+		try {
+			const res = await fetch(IANA_BOOTSTRAP_URL);
+			const data = await res.json() as { services: Array<[string[], string[]]> };
+			const map = new Map<string, string>();
+			for (const [tlds, urls] of data.services) {
+				const baseUrl = urls[0]; // first URL is preferred
+				for (const tld of tlds) {
+					map.set(tld.toLowerCase(), baseUrl);
+				}
 			}
+			_bootstrapCache = map;
+			_bootstrapFetchedAt = Date.now();
+			return map;
+		} catch {
+			// Return empty map — will fall back to rdap.org
+			return _bootstrapCache ?? new Map();
+		} finally {
+			_bootstrapFetch = null;
 		}
-		_bootstrapCache = map;
-		_bootstrapFetchedAt = Date.now();
-		return map;
-	} catch {
-		// Return empty map — will fall back to rdap.org
-		return _bootstrapCache ?? new Map();
-	}
+	})();
+	return _bootstrapFetch;
 }
 
 /** Build the RDAP URL for a domain, using bootstrap or rdap.org fallback */
@@ -174,39 +189,49 @@ function parseRdapResponse(domain: string, rdap: RdapResponse, raw: string): Who
 
 /** Verify a single domain via RDAP — called on-demand, not in bulk */
 async function rdapVerify(domain: string): Promise<ResolverResult> {
-	const tld = extractTld(domain);
-
-	// Check rate limit backoff
-	const backoffUntil = _rdapBackoff.get(tld) ?? 0;
-	if (Date.now() < backoffUntil) {
-		return { domain, status: 'likely-available', records: [], error: 'rate limited, try again later', method: 'rdap' };
+	// Prevent duplicate concurrent verifications
+	if (_rdapInflight.has(domain)) {
+		return { domain, status: 'likely-available', records: [], error: 'verification in progress', method: 'rdap' };
 	}
+	_rdapInflight.add(domain);
 
 	try {
-		const url = await getRdapUrl(domain);
-		const res = await fetch(url, { redirect: 'follow' });
+		const tld = extractTld(domain);
 
-		if (res.status === 404) {
-			// Not in registry → confirmed available
-			return { domain, status: 'available', records: [], method: 'rdap' };
-		}
-
-		if (res.status === 429) {
-			// Rate limited — backoff for this TLD
-			_rdapBackoff.set(tld, Date.now() + RDAP_BACKOFF_MS);
+		// Check rate limit backoff
+		const backoffUntil = _rdapBackoff.get(tld) ?? 0;
+		if (Date.now() < backoffUntil) {
 			return { domain, status: 'likely-available', records: [], error: 'rate limited, try again later', method: 'rdap' };
 		}
 
-		if (res.ok) {
-			// Domain exists → taken (even if DNS said NXDOMAIN)
-			return { domain, status: 'taken', records: [], method: 'rdap' };
-		}
+		try {
+			const url = await getRdapUrl(domain);
+			const res = await fetch(url, { redirect: 'follow' });
 
-		// Other HTTP errors
-		return { domain, status: 'likely-available', records: [], error: `RDAP: HTTP ${res.status}`, method: 'rdap' };
-	} catch {
-		// CORS failure, network error — domain stays likely-available
-		return { domain, status: 'likely-available', records: [], error: 'RDAP unavailable for this TLD', method: 'rdap' };
+			if (res.status === 404) {
+				// Not in registry → confirmed available
+				return { domain, status: 'available', records: [], method: 'rdap' };
+			}
+
+			if (res.status === 429) {
+				// Rate limited — backoff for this TLD
+				_rdapBackoff.set(tld, Date.now() + RDAP_BACKOFF_MS);
+				return { domain, status: 'likely-available', records: [], error: 'rate limited, try again later', method: 'rdap' };
+			}
+
+			if (res.ok) {
+				// Domain exists → taken (even if DNS said NXDOMAIN)
+				return { domain, status: 'taken', records: [], method: 'rdap' };
+			}
+
+			// Other HTTP errors
+			return { domain, status: 'likely-available', records: [], error: `RDAP: HTTP ${res.status}`, method: 'rdap' };
+		} catch {
+			// CORS failure, network error — domain stays likely-available
+			return { domain, status: 'likely-available', records: [], error: 'RDAP unavailable for this TLD', method: 'rdap' };
+		}
+	} finally {
+		_rdapInflight.delete(domain);
 	}
 }
 
@@ -251,6 +276,11 @@ async function runConcurrent<T>(
 		if (active.size > 0) {
 			await Promise.race(active);
 		}
+	}
+
+	// Wait for in-flight tasks to settle on abort
+	if (signal?.aborted && active.size > 0) {
+		await Promise.allSettled(Array.from(active));
 	}
 }
 
