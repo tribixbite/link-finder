@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
+	import { MODE_LABELS } from '$lib/resolvers';
 </script>
 
 <header
@@ -20,9 +21,16 @@
 	</div>
 
 	<div class="flex items-center gap-2">
+		{#if app.resolverReady}
+			<span
+				class="text-xs px-2 py-0.5 rounded-full"
+				style="background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border);"
+				title="DNS resolver mode"
+			>{MODE_LABELS[app.resolverMode]}</span>
+		{/if}
 		{#if app.results.size > 0}
 			<span class="text-xs tabular-nums" style="color: var(--text-muted);">
-				{app.availableCount} avail / {app.results.size} checked
+				{app.availableCount + app.likelyAvailableCount} avail / {app.results.size} checked
 			</span>
 		{/if}
 
