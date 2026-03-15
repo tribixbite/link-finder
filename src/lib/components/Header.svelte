@@ -3,6 +3,12 @@
 	import { MODE_LABELS } from '$lib/resolvers';
 </script>
 
+{#if app.isOffline}
+	<div
+		class="w-full px-3 py-1 text-xs text-center"
+		style="background: var(--warning); color: var(--bg-primary);"
+	>Offline — DNS lookups unavailable</div>
+{/if}
 <header
 	class="sticky top-0 z-30 flex items-center justify-between px-4 py-3 border-b"
 	style="background: var(--bg-secondary); border-color: var(--border);"

@@ -172,6 +172,9 @@ class AppState {
 	resolverMode = $state<ResolverMode>('browser-doh');
 	resolverReady = $state(false);
 
+	/** Browser online/offline status — updated by window online/offline events */
+	isOffline = $state(false);
+
 	/** Persist current state to localStorage */
 	persist() {
 		try {
@@ -1166,6 +1169,12 @@ class AppState {
 			_resolver = createResolver(mode);
 			this.resolverReady = true;
 		});
+		// Offline detection — set initial state and listen for changes
+		this.isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+		if (typeof window !== 'undefined') {
+			window.addEventListener('online', () => { this.isOffline = false; });
+			window.addEventListener('offline', () => { this.isOffline = true; });
+		}
 	}
 
 	/** Get the active resolver (falls back to browser-doh if not yet initialized) */
