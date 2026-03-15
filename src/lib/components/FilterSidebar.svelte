@@ -2,6 +2,10 @@
 	import { app } from '$lib/state/app.svelte';
 	import { MUTATION_INFO, REGISTRARS, REGISTRAR_IDS } from '$lib/types';
 	import type { MutationType } from '$lib/types';
+	import SettingsPanel from './SettingsPanel.svelte';
+
+	/** Controls visibility of the collapsible settings section */
+	let showSettings = $state(false);
 
 	/** Unique TLDs in current results */
 	let resultTlds = $derived(() => {
@@ -182,4 +186,21 @@
 			Clear all filters
 		</button>
 	{/if}
+
+	<!-- Settings (collapsible) -->
+	<div class="border-t" style="border-color: var(--border); padding-top: 0.5rem;">
+		<button
+			onclick={() => showSettings = !showSettings}
+			class="flex items-center justify-between w-full px-2 py-1 rounded text-xs cursor-pointer border-0"
+			style="background: transparent; color: var(--text-muted);"
+		>
+			<span>Settings</span>
+			<span>{showSettings ? '▾' : '▸'}</span>
+		</button>
+		{#if showSettings}
+			<div class="mt-1.5">
+				<SettingsPanel />
+			</div>
+		{/if}
+	</div>
 </aside>
