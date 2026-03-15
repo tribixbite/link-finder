@@ -46,7 +46,7 @@ const MAX_STORED_RESULTS = 2000;
  * which breaks timer callbacks and non-reactive bookkeeping.
  */
 let _abortController: AbortController | null = null;
-let _pendingUpdates: Array<{ domain: string; records: string[]; status: string; error?: string }> = [];
+let _pendingUpdates: Array<{ domain: string; records: string[]; status: string; error?: string; method?: string }> = [];
 let _flushTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastProgress = 0;
 let _persistInputTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1245,6 +1245,7 @@ class AppState {
 					records: upd.records,
 					status: upd.status as DomainResult['status'],
 					error: upd.error,
+					method: (upd.method as DomainResult['method']) ?? existing.method,
 					checkedAt: Date.now(),
 				});
 			}
@@ -1289,6 +1290,7 @@ class AppState {
 					records: result.records,
 					status: result.status,
 					error: result.error,
+					method: result.method,
 				});
 				_lastProgress = done;
 				// Batch flush every 150ms to avoid per-result reactive updates
