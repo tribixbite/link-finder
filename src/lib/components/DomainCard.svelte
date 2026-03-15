@@ -36,6 +36,7 @@
 
 	const statusColors: Record<string, string> = {
 		available: 'var(--available)',
+		'likely-available': 'var(--warning)',
 		taken: 'var(--taken)',
 		reserved: 'var(--warning)',
 		checking: 'var(--accent)',
@@ -44,6 +45,7 @@
 
 	const statusIcons: Record<string, string> = {
 		available: '\u2713',
+		'likely-available': '?',
 		taken: '\u2717',
 		reserved: '\u229B', // circled asterisk
 		checking: '\u2022',
@@ -55,7 +57,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="rounded-lg p-3 transition-colors"
-	style="background: var(--bg-secondary); border: 1px solid {isSelected ? 'var(--accent)' : result.status === 'available' ? 'color-mix(in srgb, var(--available) 30%, var(--border))' : 'var(--border)'};"
+	style="background: var(--bg-secondary); border: 1px solid {isSelected ? 'var(--accent)' : result.status === 'available' ? 'color-mix(in srgb, var(--available) 30%, var(--border))' : result.status === 'likely-available' ? 'color-mix(in srgb, var(--warning) 20%, var(--border))' : 'var(--border)'};"
 	data-domain-card
 	tabindex="0"
 	role="article"
@@ -94,7 +96,7 @@
 					aria-label="Copy domain to clipboard"
 				>{copied ? '\u2713' : '\u2398'}</button>
 
-				{#if result.status === 'available'}
+				{#if result.status === 'available' || result.status === 'likely-available'}
 					<RegistrarMenu domain={result.domain} />
 				{/if}
 			</div>
@@ -120,7 +122,16 @@
 
 		<!-- Actions -->
 		<div class="flex items-center gap-1 shrink-0">
-			{#if result.status === 'taken' || result.status === 'reserved'}
+			{#if result.status === 'likely-available'}
+				<button
+					onclick={() => app.verifyDomain(result.domain)}
+					class="inline-flex items-center justify-center px-1.5 h-6 rounded border-0 cursor-pointer text-xs"
+					style="background: var(--accent-muted); color: var(--accent);"
+					title="Verify availability via RDAP"
+					aria-label="Verify domain availability"
+				>verify</button>
+			{/if}
+			{#if result.status === 'taken' || result.status === 'reserved' || result.status === 'likely-available'}
 				<button
 					onclick={() => app.openWhois(result.domain)}
 					class="inline-flex items-center justify-center w-6 h-6 rounded border-0 cursor-pointer"
@@ -141,7 +152,7 @@
 				class="text-xs font-medium px-2 py-0.5 rounded-full"
 				style="background: color-mix(in srgb, {statusColors[result.status]} 15%, transparent); color: {statusColors[result.status]};"
 			>
-				{result.status}
+				{result.status === 'likely-available' ? 'likely' : result.status}
 			</span>
 		</div>
 	</div>
