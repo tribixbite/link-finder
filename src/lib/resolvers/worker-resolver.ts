@@ -2,7 +2,7 @@ import type { Resolver, ResolverResult, OnResult } from './types';
 import type { WhoisData, ResolverMode } from '../types';
 
 /** Default Cloudflare Worker URL */
-export const DEFAULT_WORKER_URL = 'https://digr-dns.workers.dev';
+export const DEFAULT_WORKER_URL = 'https://digr-dns.tribixbite.workers.dev';
 
 /** localStorage key for Worker URL override */
 const LS_WORKER_URL = 'digr-worker-url';
