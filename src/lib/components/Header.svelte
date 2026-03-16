@@ -1,7 +1,58 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
 	import { MODE_LABELS } from '$lib/resolvers';
+	import type { ResolverMode } from '$lib/types';
+
+	let dropdownOpen = $state(false);
+
+	const modes: { value: ResolverMode | 'auto'; label: string; desc: string }[] = [
+		{ value: 'auto', label: 'Auto-detect', desc: 'Probe local → worker → browser' },
+		{ value: 'local-api', label: 'Local API', desc: 'dig + whois (npx findurlink)' },
+		{ value: 'edge-worker', label: 'Edge Worker', desc: 'Cloudflare Worker proxy' },
+		{ value: 'browser-doh', label: 'Browser DNS', desc: 'Client-side DoH + RDAP' },
+	];
+
+	let forcedMode = $state<ResolverMode | 'auto'>((() => {
+		try {
+			const m = localStorage.getItem('findur-resolver-mode');
+			if (m && ['local-api', 'edge-worker', 'browser-doh'].includes(m)) return m as ResolverMode;
+		} catch {}
+		return 'auto';
+	})());
+
+	let workerUrl = $state((() => {
+		try { return localStorage.getItem('findur-worker-url') || ''; }
+		catch { return ''; }
+	})());
+
+	function selectMode(mode: ResolverMode | 'auto') {
+		forcedMode = mode;
+		if (mode === 'auto') {
+			app.clearResolverOverride();
+		} else {
+			app.switchResolver(mode);
+		}
+	}
+
+	function saveWorkerUrl() {
+		try {
+			if (workerUrl.trim()) {
+				localStorage.setItem('findur-worker-url', workerUrl.trim());
+			} else {
+				localStorage.removeItem('findur-worker-url');
+			}
+		} catch {}
+	}
+
+	function handleClickOutside(e: MouseEvent) {
+		const target = e.target as HTMLElement;
+		if (!target.closest('[data-resolver-dropdown]')) {
+			dropdownOpen = false;
+		}
+	}
 </script>
+
+<svelte:window onclick={handleClickOutside} />
 
 {#if app.isOffline}
 	<div
@@ -24,13 +75,69 @@
 	</div>
 
 	<div class="flex items-center gap-2">
+		<!-- Resolver mode badge + dropdown -->
 		{#if app.resolverReady}
-			<span
-				class="text-xs px-2 py-0.5 rounded-full"
-				style="background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border);"
-				title="DNS resolver mode"
-			>{MODE_LABELS[app.resolverMode]}</span>
+			<div class="relative" data-resolver-dropdown>
+				<button
+					onclick={(e) => { e.stopPropagation(); dropdownOpen = !dropdownOpen; }}
+					class="text-xs px-2 py-0.5 rounded-full cursor-pointer border transition-colors"
+					style="background: {dropdownOpen ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {dropdownOpen ? 'var(--accent)' : 'var(--text-muted)'}; border-color: {dropdownOpen ? 'var(--accent)' : 'var(--border)'};"
+					title="Change DNS resolver mode"
+				>{MODE_LABELS[app.resolverMode]} ▾</button>
+
+				{#if dropdownOpen}
+					<div
+						class="absolute right-0 top-8 w-64 rounded-lg shadow-lg overflow-hidden z-50"
+						style="background: var(--bg-secondary); border: 1px solid var(--border);"
+					>
+						<div class="p-2 flex flex-col gap-1">
+							{#each modes as mode}
+								<button
+									onclick={() => { selectMode(mode.value); dropdownOpen = false; }}
+									class="flex flex-col items-start w-full px-2.5 py-1.5 rounded text-left cursor-pointer border-0 transition-colors"
+									style="background: {forcedMode === mode.value ? 'var(--accent-muted)' : 'transparent'}; color: var(--text-primary);"
+								>
+									<span class="text-xs font-medium">{mode.label}</span>
+									<span class="text-xs" style="color: var(--text-muted);">{mode.desc}</span>
+								</button>
+							{/each}
+						</div>
+
+						<!-- Contextual hint for local-api -->
+						{#if forcedMode === 'local-api' || app.resolverMode === 'local-api'}
+							<div class="px-3 py-2 text-xs border-t" style="border-color: var(--border); background: var(--bg-tertiary);">
+								<span style="color: var(--accent);">Run:</span>
+								<code class="select-all ml-1" style="color: var(--text-primary);">npx findurlink</code>
+								<div class="mt-0.5" style="color: var(--text-muted);">Requires dig + whois</div>
+							</div>
+						{/if}
+
+						<!-- Worker URL for edge-worker -->
+						{#if forcedMode === 'edge-worker' || app.resolverMode === 'edge-worker'}
+							<div class="px-3 py-2 border-t" style="border-color: var(--border); background: var(--bg-tertiary);">
+								<label class="text-xs block mb-1" style="color: var(--text-muted);" for="hdr-worker-url">Worker URL</label>
+								<div class="flex gap-1">
+									<input
+										id="hdr-worker-url"
+										type="url"
+										bind:value={workerUrl}
+										placeholder="https://findur-dns.workers.dev"
+										class="flex-1 px-2 py-1 rounded text-xs border"
+										style="background: var(--bg-primary); color: var(--text-primary); border-color: var(--border);"
+									/>
+									<button
+										onclick={saveWorkerUrl}
+										class="px-2 py-1 rounded text-xs border-0 cursor-pointer"
+										style="background: var(--accent-muted); color: var(--accent);"
+									>Save</button>
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		{/if}
+
 		{#if app.results.size > 0}
 			<span class="text-xs tabular-nums" style="color: var(--text-muted);">
 				{app.availableCount + app.likelyAvailableCount} avail / {app.results.size} checked
@@ -60,7 +167,6 @@
 			style="background: var(--bg-tertiary); color: {app.savedCount > 0 ? 'var(--warning)' : 'var(--text-secondary)'};"
 			title="Saved domains ({app.savedCount})"
 		>
-			<!-- Star icon -->
 			{#if app.savedCount > 0}
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">
 					<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
