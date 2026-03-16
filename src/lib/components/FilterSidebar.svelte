@@ -61,6 +61,22 @@
 				</button>
 			{/each}
 
+			<!-- Unverified row: available domains with whois failures -->
+			{#if app.unverifiedCount > 0}
+				<div class="flex items-center justify-between px-2 py-1 rounded text-xs" style="color: var(--warning);">
+					<span>Unverified</span>
+					<div class="flex items-center gap-1.5">
+						<span class="tabular-nums" style="color: var(--text-muted);">{app.unverifiedCount}</span>
+						<button
+							onclick={() => app.recheckUnverified()}
+							class="text-xs px-1.5 py-0.5 rounded border-0 cursor-pointer"
+							style="background: var(--accent-muted); color: var(--accent);"
+							title="Re-verify all domains where whois failed"
+						>verify all</button>
+					</div>
+				</div>
+			{/if}
+
 			<!-- Error row: hide toggle + retry all -->
 			{#if app.errorCount > 0}
 				<div class="flex items-center justify-between px-2 py-1 rounded text-xs" style="color: var(--warning);">

@@ -386,6 +386,68 @@ class AppState {
 		return count;
 	}
 
+	/** Count of unverified results (available but whois failed — needs retry) */
+	get unverifiedCount(): number {
+		let count = 0;
+		for (const r of this.results.values()) {
+			if (r.status === 'available' && r.error) count++;
+		}
+		return count;
+	}
+
+	/** Re-check all unverified domains (available with whois errors) */
+	async recheckUnverified() {
+		const entries = [...this.results.values()]
+			.filter((r) => r.status === 'available' && r.error);
+		if (entries.length === 0) return;
+
+		const domains = entries.map((r) => r.domain);
+		const updated = new Map(this.results);
+		for (const d of domains) {
+			const entry = updated.get(d);
+			if (entry) updated.set(d, { ...entry, status: 'checking', error: undefined });
+		}
+		this.results = updated;
+
+		try {
+			const resolver = this.getResolver();
+			const resultMap = new Map<string, ResolverResult>();
+			await resolver.check(domains, (r) => { resultMap.set(r.domain, r); });
+
+			let changed = 0;
+			const next = new Map(this.results);
+			for (const [domain, r] of resultMap) {
+				const entry = next.get(domain);
+				if (entry) {
+					const wasAvailable = entries.find((e) => e.domain === domain);
+					const statusChanged = wasAvailable && wasAvailable.status !== r.status;
+					if (statusChanged) changed++;
+					next.set(domain, {
+						...entry,
+						records: r.records,
+						status: r.status,
+						error: r.error,
+						checkedAt: Date.now(),
+						previousStatus: statusChanged ? wasAvailable.status : entry.previousStatus,
+					});
+				}
+			}
+			this.results = next;
+			const verified = domains.length - [...resultMap.values()].filter((r) => r.error).length;
+			toasts.success(`Rechecked ${domains.length} unverified${verified > 0 ? `, ${verified} verified` : ''}${changed > 0 ? `, ${changed} changed` : ''}`);
+		} catch {
+			const next = new Map(this.results);
+			for (const d of domains) {
+				const entry = next.get(d);
+				if (entry && entry.status === 'checking') {
+					next.set(d, { ...entry, status: 'error', error: 'recheck failed' });
+				}
+			}
+			this.results = next;
+		}
+		this.persist();
+	}
+
 	/** Count of stale results (checked >24h ago, unfiltered) */
 	get staleCount(): number {
 		let count = 0;

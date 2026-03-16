@@ -123,17 +123,18 @@ async function checkDomain(domain: string): Promise<CheckResult> {
 				const rdapUrl = await getRdapUrl(domain);
 				const rdapRes = await fetch(rdapUrl, { redirect: 'follow' });
 				if (rdapRes.status === 404) {
+					// Not in registry — confirmed available
 					return { domain, status: 'available', records: [], method: 'worker' };
 				}
 				if (rdapRes.ok) {
-					// RDAP found it — registered despite NXDOMAIN (parked/no DNS)
+					// RDAP found it — registered despite NXDOMAIN (parked/held/no DNS)
 					return { domain, status: 'taken', records: [], method: 'worker' };
 				}
-				// RDAP error — still report as available (DNS says NXDOMAIN)
-				return { domain, status: 'available', records: [], method: 'worker' };
+				// RDAP returned non-404/non-OK (429, 500, etc.) — can't confirm, mark unverified
+				return { domain, status: 'available', records: [], error: `RDAP unverified (HTTP ${rdapRes.status})`, method: 'worker' };
 			} catch {
-				// RDAP unavailable — trust DNS NXDOMAIN
-				return { domain, status: 'available', records: [], method: 'worker' };
+				// RDAP network error — can't confirm, mark unverified
+				return { domain, status: 'available', records: [], error: 'RDAP unavailable', method: 'worker' };
 			}
 		}
 

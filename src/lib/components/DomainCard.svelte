@@ -176,13 +176,11 @@
 			{#if result.error}
 				<span class="text-xs" style="color: var(--warning);">{result.error}</span>
 			{/if}
-			{#if result.status === 'error'}
-				<button
-					onclick={() => app.recheckDomain(result.domain)}
-					class="text-xs px-2 py-0.5 rounded border-0 cursor-pointer transition-colors"
-					style="background: var(--accent-muted); color: var(--accent);"
-				>retry</button>
-			{/if}
+			<button
+				onclick={() => app.recheckDomain(result.domain)}
+				class="text-xs px-2 py-0.5 rounded border-0 cursor-pointer transition-colors"
+				style="background: var(--accent-muted); color: var(--accent);"
+			>retry</button>
 		</div>
 	{/if}
 </div>

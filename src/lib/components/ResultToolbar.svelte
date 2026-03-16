@@ -36,7 +36,7 @@
 </script>
 
 <div
-	class="flex items-center justify-between px-3 py-2 rounded-lg"
+	class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg"
 	style="background: var(--bg-secondary); border: 1px solid var(--border);"
 >
 	<div class="flex items-center gap-3" role="status" aria-live="polite">
@@ -52,7 +52,7 @@
 		{/if}
 	</div>
 
-	<div class="flex items-center gap-2">
+	<div class="flex flex-wrap items-center gap-1.5">
 		<!-- Recheck stale -->
 		{#if app.staleCount > 0}
 			<button
@@ -60,7 +60,7 @@
 				class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors"
 				style="background: color-mix(in srgb, var(--warning) 15%, var(--bg-tertiary)); color: var(--warning);"
 				title="Re-check results older than 24 hours"
-			>Recheck stale ({app.staleCount})</button>
+			>Stale ({app.staleCount})</button>
 		{/if}
 
 		<!-- Clear results -->
@@ -75,32 +75,32 @@
 		<button
 			onclick={copyAvailable}
 			disabled={app.availableCount === 0 && app.likelyAvailableCount === 0}
-			class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+			class="px-1.5 py-1 rounded text-xs cursor-pointer border-0 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
 			style="background: var(--bg-tertiary); color: var(--text-secondary);"
 			title="Copy available domains to clipboard"
-		>Copy avail</button>
+		>Copy</button>
 
 		<!-- CSV export -->
 		<button
 			onclick={exportCsv}
-			class="px-2 py-1 rounded text-xs cursor-pointer border-0 transition-colors"
+			class="px-1.5 py-1 rounded text-xs cursor-pointer border-0 transition-colors"
 			style="background: var(--bg-tertiary); color: var(--text-secondary);"
 			title="Download results as CSV"
 		>CSV</button>
 
 		<!-- View toggle -->
 		<div
-			class="flex rounded-md overflow-hidden"
+			class="flex rounded-md overflow-hidden shrink-0"
 			style="border: 1px solid var(--border);"
 		>
 			<button
 				onclick={() => app.setViewMode('card')}
-				class="px-2.5 py-1 text-xs cursor-pointer border-0 transition-colors"
+				class="px-2 py-1 text-xs cursor-pointer border-0 transition-colors"
 				style="background: {app.viewMode === 'card' ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {app.viewMode === 'card' ? 'var(--accent)' : 'var(--text-muted)'};"
 			>Cards</button>
 			<button
 				onclick={() => app.setViewMode('table')}
-				class="px-2.5 py-1 text-xs cursor-pointer border-0 transition-colors"
+				class="px-2 py-1 text-xs cursor-pointer border-0 transition-colors"
 				style="background: {app.viewMode === 'table' ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {app.viewMode === 'table' ? 'var(--accent)' : 'var(--text-muted)'};"
 			>Table</button>
 		</div>
@@ -108,7 +108,7 @@
 		<!-- Mobile filter toggle -->
 		<button
 			onclick={() => { app.sidebarOpen = !app.sidebarOpen; }}
-			class="lg:hidden px-2.5 py-1 rounded text-xs cursor-pointer border-0"
+			class="lg:hidden px-2 py-1 rounded text-xs cursor-pointer border-0 shrink-0"
 			style="background: var(--bg-tertiary); color: var(--text-secondary);"
 		>Filters</button>
 	</div>
