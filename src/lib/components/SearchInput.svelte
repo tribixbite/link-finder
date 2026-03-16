@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
+	import { toasts } from '$lib/state/toasts.svelte';
 	import { TLDS, POPULAR_TLDS, MUTATION_INFO, TLD_PRESETS } from '$lib/types';
 	import type { MutationType } from '$lib/types';
 	import SearchHistory from './SearchHistory.svelte';
@@ -10,6 +11,37 @@
 	let showAllTlds = $state(false);
 	let tldSearch = $state('');
 	let historyOpen = $state(false);
+
+	/** Export selected TLDs to clipboard as comma-separated list */
+	async function exportTlds() {
+		const list = [...app.selectedTlds].sort().join(', ');
+		try {
+			await navigator.clipboard.writeText(list);
+			toasts.success(`${app.selectedTlds.size} TLDs copied`);
+		} catch {
+			toasts.error('Copy failed');
+		}
+	}
+
+	/** Import TLDs from clipboard (comma/space/newline separated, with or without dots) */
+	async function importTlds() {
+		try {
+			const text = await navigator.clipboard.readText();
+			if (!text.trim()) { toasts.error('Clipboard empty'); return; }
+			const tlds = text
+				.split(/[,\s\n\r]+/)
+				.map((t) => t.trim().toLowerCase())
+				.filter(Boolean)
+				.map((t) => t.startsWith('.') ? t : `.${t}`);
+			const valid = tlds.filter((t) => (TLDS as readonly string[]).includes(t));
+			if (valid.length === 0) { toasts.error('No valid TLDs found in clipboard'); return; }
+			app.selectedTlds = new Set(valid);
+			app.persist();
+			toasts.success(`Imported ${valid.length} TLDs`);
+		} catch {
+			toasts.error('Paste failed — clipboard access denied');
+		}
+	}
 
 	/** TLDs to display based on search + expand state */
 	let visibleTlds = $derived(() => {
@@ -84,6 +116,19 @@
 					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
 					style="background: var(--bg-tertiary); color: var(--text-muted);"
 				>none</button>
+				<span style="color: var(--border);">|</span>
+				<button
+					onclick={exportTlds}
+					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
+					style="background: var(--bg-tertiary); color: var(--text-muted);"
+					title="Copy selected TLDs to clipboard"
+				>export</button>
+				<button
+					onclick={importTlds}
+					class="text-xs px-2 py-0.5 rounded cursor-pointer border-0"
+					style="background: var(--bg-tertiary); color: var(--text-muted);"
+					title="Import TLDs from clipboard"
+				>import</button>
 			</div>
 		</div>
 
