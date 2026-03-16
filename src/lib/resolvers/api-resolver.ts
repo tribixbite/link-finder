@@ -1,15 +1,13 @@
 import type { Resolver, ResolverResult, OnResult } from './types';
 import type { WhoisData, ResolverMode } from '../types';
-
-/** API server base URL */
-const API_BASE = '/api';
+import { getApiBaseUrl } from './index';
 
 /** Resolver that uses the local Bun API server (dig + whois) */
 export class ApiResolver implements Resolver {
 	readonly mode: ResolverMode = 'local-api';
 
 	async check(domains: string[], onResult: OnResult, signal?: AbortSignal): Promise<void> {
-		const res = await fetch(`${API_BASE}/stream`, {
+		const res = await fetch(`${getApiBaseUrl()}/stream`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ domains }),
@@ -68,7 +66,7 @@ export class ApiResolver implements Resolver {
 
 	async lookup(domain: string): Promise<WhoisData | null> {
 		try {
-			const res = await fetch(`${API_BASE}/whois?domain=${encodeURIComponent(domain)}`);
+			const res = await fetch(`${getApiBaseUrl()}/whois?domain=${encodeURIComponent(domain)}`);
 			if (!res.ok) return null;
 			return await res.json() as WhoisData;
 		} catch {

@@ -5,17 +5,57 @@
  * Works with both Bun and Node.js (>=18).
  *
  * Usage: npx findurlink
- *        bunx findurlink
- *        PORT=3001 CORS_ORIGIN=* findurlink
+ *        npx findurlink -p 4000
+ *        PORT=3001 findurlink
  */
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:http';
+import { createConnection } from 'node:net';
 
 const execFileAsync = promisify(execFile);
 
-const PORT = parseInt(process.env.PORT || '3001', 10);
+/** Parse --port / -p from argv, fallback to PORT env, then auto-scan */
+function parsePort() {
+	const args = process.argv.slice(2);
+	for (let i = 0; i < args.length; i++) {
+		if ((args[i] === '--port' || args[i] === '-p') && args[i + 1]) return parseInt(args[i + 1], 10);
+		if (args[i].startsWith('--port=')) return parseInt(args[i].split('=')[1], 10);
+	}
+	if (process.env.PORT) return parseInt(process.env.PORT, 10);
+	return 0; // 0 = auto-scan
+}
+
+/** Check if a port is free */
+function isPortFree(port) {
+	return new Promise((resolve) => {
+		const conn = createConnection({ port, host: '127.0.0.1' });
+		conn.on('connect', () => { conn.destroy(); resolve(false); });
+		conn.on('error', () => resolve(true));
+		setTimeout(() => { conn.destroy(); resolve(true); }, 200);
+	});
+}
+
+/** Find an available port from candidates */
+async function findPort(preferred) {
+	if (preferred) {
+		if (await isPortFree(preferred)) return preferred;
+		console.error(`\x1b[33mPort ${preferred} in use\x1b[0m`);
+		// If explicitly specified, don't auto-scan — fail fast
+		if (process.env.PORT || process.argv.some(a => a === '-p' || a === '--port' || a.startsWith('--port='))) {
+			process.exit(1);
+		}
+	}
+	const candidates = [3001, 3002, 3003, 3004, 3005, 3010, 3100, 4001, 8001];
+	for (const port of candidates) {
+		if (await isPortFree(port)) return port;
+	}
+	// Last resort: let OS pick
+	return 0;
+}
+
+const REQUESTED_PORT = parsePort();
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 const MAX_CONCURRENT_DIG = 12;
 const MAX_CONCURRENT_WHOIS = 4;
@@ -354,11 +394,14 @@ async function checkDeps() {
 }
 
 await checkDeps();
+
+const PORT = await findPort(REQUESTED_PORT);
 fetchPricing();
 
 server.listen(PORT, () => {
-	console.log(`\x1b[36mfindurlink\x1b[0m API server running on \x1b[1mhttp://localhost:${PORT}\x1b[0m`);
-	console.log(`  Point findur.link Settings → Local API`);
+	const actual = server.address()?.port ?? PORT;
+	console.log(`\x1b[36mfindurlink\x1b[0m API server running on \x1b[1mhttp://localhost:${actual}\x1b[0m`);
+	console.log(`  Open \x1b[4mhttps://findur.link\x1b[0m — it auto-detects this server`);
 	console.log(`  CORS: ${CORS_ORIGIN}`);
 	console.log(`  Endpoints:`);
 	console.log(`    POST /api/stream  — SSE streaming domain check`);

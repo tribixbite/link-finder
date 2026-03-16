@@ -21,7 +21,7 @@ import type {
 } from '../types';
 import { DEFAULT_TLDS, DEFAULT_MUTATIONS, LIST_COLORS, REGISTRARS } from '../types';
 import { SPACESHIP_TLDS, NAMECHEAP_TLDS, CLOUDFLARE_TLDS } from '../registrar-tlds';
-import { detectMode, createResolver, MODE_LABELS } from '../resolvers';
+import { detectMode, createResolver, MODE_LABELS, getApiBaseUrl } from '../resolvers';
 import type { Resolver, ResolverResult } from '../resolvers';
 
 /** Parse terms from user input (comma, newline, or space separated) */
@@ -703,7 +703,7 @@ class AppState {
 		try {
 			// Try local API first if in that mode
 			if (_resolver?.mode === 'local-api') {
-				const res = await fetch('/api/pricing');
+				const res = await fetch(`${getApiBaseUrl()}/pricing`);
 				const data = await res.json() as {
 					pricing: Record<string, TldPricing>;
 					registrars: Record<string, string[]>;
