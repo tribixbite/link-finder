@@ -1,4 +1,4 @@
-/** Cloudflare Worker: digr DNS edge proxy */
+/** Cloudflare Worker: findur.link DNS edge proxy */
 
 interface Env {
 	ENVIRONMENT: string;

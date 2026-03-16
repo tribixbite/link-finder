@@ -1,11 +1,11 @@
 /// <reference lib="webworker" />
 // @ts-nocheck
 /**
- * digr Service Worker — cache-first for static assets, network-first for API.
+ * findur.link Service Worker — cache-first for static assets, network-first for API.
  * Enables offline access to the app shell.
  */
 
-const CACHE_VERSION = 'digr-v1';
+const CACHE_VERSION = 'findur-v1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 

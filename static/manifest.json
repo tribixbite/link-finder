@@ -1,6 +1,6 @@
 {
-	"name": "digr — Domain Name Search",
-	"short_name": "digr",
+	"name": "findur.link — Domain Name Search",
+	"short_name": "findur.link",
 	"description": "Bulk domain name search with smart mutations. Find the perfect short domain.",
 	"start_url": "/",
 	"display": "standalone",

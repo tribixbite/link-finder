@@ -13,14 +13,14 @@
 
 	/** Worker URL input value (persisted separately in localStorage) */
 	let workerUrl = $state((() => {
-		try { return localStorage.getItem('digr-worker-url') || ''; }
+		try { return localStorage.getItem('findur-worker-url') || ''; }
 		catch { return ''; }
 	})());
 
 	/** Currently forced mode (or 'auto' if none is forced) */
 	let forcedMode = $state<ResolverMode | 'auto'>((() => {
 		try {
-			const m = localStorage.getItem('digr-resolver-mode');
+			const m = localStorage.getItem('findur-resolver-mode');
 			if (m && ['local-api', 'edge-worker', 'browser-doh'].includes(m)) return m as ResolverMode;
 		} catch {}
 		return 'auto';
@@ -40,9 +40,9 @@
 	function saveWorkerUrl() {
 		try {
 			if (workerUrl.trim()) {
-				localStorage.setItem('digr-worker-url', workerUrl.trim());
+				localStorage.setItem('findur-worker-url', workerUrl.trim());
 			} else {
-				localStorage.removeItem('digr-worker-url');
+				localStorage.removeItem('findur-worker-url');
 			}
 		} catch {}
 	}
@@ -83,7 +83,7 @@
 					id="worker-url"
 					type="url"
 					bind:value={workerUrl}
-					placeholder="https://digr-dns.workers.dev"
+					placeholder="https://findur-dns.workers.dev"
 					class="flex-1 px-2 py-1 rounded text-xs border"
 					style="background: var(--bg-primary); color: var(--text-primary); border-color: var(--border);"
 				/>

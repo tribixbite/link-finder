@@ -5,7 +5,7 @@ import type { WhoisData, ResolverMode } from '../types';
 export const DEFAULT_WORKER_URL = 'https://digr-dns.tribixbite.workers.dev';
 
 /** localStorage key for Worker URL override */
-const LS_WORKER_URL = 'digr-worker-url';
+const LS_WORKER_URL = 'findur-worker-url';
 
 function getWorkerUrl(): string {
 	try {

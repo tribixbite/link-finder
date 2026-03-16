@@ -7,8 +7,8 @@ import { WorkerResolver, DEFAULT_WORKER_URL } from './worker-resolver';
 export type { Resolver, ResolverResult, OnResult } from './types';
 
 /** localStorage keys */
-const LS_MODE_OVERRIDE = 'digr-resolver-mode';
-const LS_WORKER_URL = 'digr-worker-url';
+const LS_MODE_OVERRIDE = 'findur-resolver-mode';
+const LS_WORKER_URL = 'findur-worker-url';
 
 /** Probe timeout for local API (ms) */
 const API_PROBE_TIMEOUT = 1500;

@@ -226,7 +226,7 @@
 
 	<!-- Footer -->
 	<footer class="text-center py-3 text-xs" style="color: var(--text-muted); border-top: 1px solid var(--border);">
-		digr — domain search tool &mdash; dig DNS lookups on Termux
+		findur.link &mdash; bulk domain name search
 	</footer>
 
 	<!-- Saved domains panel overlay -->

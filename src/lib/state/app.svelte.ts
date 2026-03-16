@@ -33,7 +33,7 @@ function parseTerms(input: string): string[] {
 }
 
 /** localStorage key prefix */
-const LS = 'digr-';
+const LS = 'findur-';
 
 /** Current schema version — bump when localStorage shape changes */
 const SCHEMA_VERSION = 2;
@@ -512,7 +512,7 @@ class AppState {
 		this.persist();
 	}
 
-	/** Estimated localStorage usage for digr-* keys in KB */
+	/** Estimated localStorage usage for findur-* keys in KB */
 	get storageUsageKB(): number {
 		let bytes = 0;
 		try {
@@ -1228,7 +1228,7 @@ class AppState {
 	toggleTheme() {
 		this.theme = this.theme === 'dark' ? 'light' : 'dark';
 		document.documentElement.setAttribute('data-theme', this.theme);
-		localStorage.setItem('digr-theme', this.theme);
+		localStorage.setItem('findur-theme', this.theme);
 	}
 
 	/** Initialize theme from localStorage, fetch pricing, bind visibility persistence */
@@ -1236,7 +1236,7 @@ class AppState {
 		// Run schema migrations before anything else
 		runMigrations();
 
-		const saved = localStorage.getItem('digr-theme') as 'dark' | 'light' | null;
+		const saved = localStorage.getItem('findur-theme') as 'dark' | 'light' | null;
 		if (saved) {
 			this.theme = saved;
 			document.documentElement.setAttribute('data-theme', saved);
@@ -1291,14 +1291,14 @@ class AppState {
 		this.resolverMode = mode;
 		_resolver = createResolver(mode);
 		try {
-			localStorage.setItem('digr-resolver-mode', mode);
+			localStorage.setItem('findur-resolver-mode', mode);
 		} catch { /* ignore */ }
 	}
 
 	/** Clear forced resolver mode (revert to auto-detection) */
 	clearResolverOverride() {
 		try {
-			localStorage.removeItem('digr-resolver-mode');
+			localStorage.removeItem('findur-resolver-mode');
 		} catch { /* ignore */ }
 		detectMode().then((mode) => {
 			this.resolverMode = mode;

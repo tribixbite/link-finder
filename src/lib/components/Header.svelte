@@ -15,15 +15,12 @@
 >
 	<div class="flex items-center gap-3">
 		<a href="/" class="flex items-center gap-2 no-underline">
-			<img src="/favicon.svg" alt="digr" class="w-7 h-7" />
+			<img src="/favicon.svg" alt="findur.link" class="w-7 h-7" />
 			<span
 				class="text-xl font-bold tracking-tight"
 				style="color: var(--accent); font-family: ui-monospace, monospace;"
-			>digr</span>
+			>findur<span style="color: var(--text-muted); font-weight: 400;">.link</span></span>
 		</a>
-		<span class="text-xs hidden sm:inline" style="color: var(--text-muted);">
-			domain search
-		</span>
 	</div>
 
 	<div class="flex items-center gap-2">

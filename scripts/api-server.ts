@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * digr API server — runs dig + whois lookups on Termux.
+ * findur.link API server — runs dig + whois lookups on Termux.
  * Two-phase availability check:
  *   1. Fast: `dig` checks DNS status code (NXDOMAIN vs NOERROR)
  *   2. Verify: `whois` confirms availability for NXDOMAIN domains
@@ -604,7 +604,7 @@ Bun.serve({
 	},
 });
 
-console.log(`digr API server running on http://localhost:${PORT}`);
+console.log(`findur.link API server running on http://localhost:${PORT}`);
 console.log(`  Mode: ${IS_PRODUCTION ? 'production' : 'development'}`);
 if (IS_PRODUCTION) console.log(`  Static: serving from ${STATIC_DIR}`);
 console.log(`  CORS:  ${CORS_ORIGIN}`);
