@@ -729,9 +729,6 @@ class AppState {
 
 	/** Fetch TLD pricing + registrar TLD support from API or Porkbun direct */
 	async fetchPricing() {
-		// Restore cached pricing immediately so UI has data while we fetch fresh
-		if (this.pricing.size === 0) this.restorePricingCache();
-
 		try {
 			// Try local API first if in that mode
 			if (_resolver?.mode === 'local-api') {
@@ -1281,8 +1278,8 @@ class AppState {
 			this.theme = 'light';
 			document.documentElement.setAttribute('data-theme', 'light');
 		}
-		// Fetch TLD pricing (non-blocking)
-		this.fetchPricing();
+		// Restore cached pricing immediately (non-blocking, no network)
+		if (this.pricing.size === 0) this.restorePricingCache();
 		// Persist state when user switches away from app (mobile tab switch, home button)
 		document.addEventListener('visibilitychange', () => {
 			if (document.visibilityState === 'hidden') this.persist();
@@ -1300,11 +1297,12 @@ class AppState {
 				// SW registration failed — non-critical
 			});
 		}
-		// Detect and initialize resolver
+		// Detect resolver, then fetch fresh pricing (needs resolver to pick correct source)
 		detectMode().then((mode) => {
 			this.resolverMode = mode;
 			_resolver = createResolver(mode);
 			this.resolverReady = true;
+			this.fetchPricing();
 		});
 		// Offline detection — set initial state and listen for changes
 		this.isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
