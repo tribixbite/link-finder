@@ -1,6 +1,6 @@
 {
   "name": "findurlink",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Local DNS API server for findur.link — dig + whois domain availability checks",
   "bin": {
     "findurlink": "./bin/findurlink.mjs"

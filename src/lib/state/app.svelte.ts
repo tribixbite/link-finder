@@ -722,11 +722,12 @@ class AppState {
 			}
 
 			// Direct Porkbun API call (public, CORS-enabled)
-			const res = await fetch('https://api.porkbun.com/api/json/v3/domain/pricing', {
+			const res = await fetch('https://api.porkbun.com/api/json/v3/pricing/get', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({}),
+				body: JSON.stringify({ apikey: '', secretapikey: '' }),
 			});
+			if (!res.ok) throw new Error(`Porkbun HTTP ${res.status}`);
 			const data = await res.json() as { status: string; pricing?: Record<string, { registration?: string; renewal?: string }> };
 			if (data.status === 'SUCCESS' && data.pricing) {
 				const map = new Map<string, TldPricing>();

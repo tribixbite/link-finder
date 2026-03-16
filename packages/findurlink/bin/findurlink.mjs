@@ -244,9 +244,10 @@ async function fetchPricing() {
 	if (_pricingPromise) return _pricingPromise;
 	_pricingPromise = (async () => {
 		try {
-			const res = await fetch('https://api.porkbun.com/api/json/v3/domain/pricing', {
-				method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
+			const res = await fetch('https://api.porkbun.com/api/json/v3/pricing/get', {
+				method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apikey: '', secretapikey: '' })
 			});
+			if (!res.ok) throw new Error(`Porkbun HTTP ${res.status}`);
 			const data = await res.json();
 			if (data.status === 'SUCCESS' && data.pricing) {
 				const parsed = {};
