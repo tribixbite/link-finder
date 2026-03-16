@@ -12,7 +12,7 @@
 
 	const columns: { field: SortField; label: string; class: string }[] = [
 		{ field: 'status', label: 'St', class: 'w-10 text-center' },
-		{ field: 'domain', label: 'Domain', class: 'flex-1 min-w-[140px]' },
+		{ field: 'domain', label: 'Name', class: 'flex-1 min-w-[80px]' },
 		{ field: 'tld', label: 'TLD', class: 'w-16' },
 		{ field: 'mutation', label: 'Mutation', class: 'w-24 hidden sm:block' },
 		{ field: 'length', label: 'Len', class: 'w-12 text-right' },
@@ -120,14 +120,12 @@
 				></span>
 			</div>
 
-			<!-- Domain -->
-			<div class="flex-1 min-w-[140px] flex items-center gap-1.5" style="font-family: ui-monospace, monospace;" title={result.domain}>
-				<span class="truncate">
-					<span style="color: var(--text-primary);">{result.name}</span><span style="color: var(--text-muted);">{result.tld}</span>
-				</span>
+			<!-- Domain (name only — TLD is in its own column) -->
+			<div class="flex-1 min-w-[80px] flex items-center gap-1.5" style="font-family: ui-monospace, monospace;" title={result.domain}>
+				<span class="truncate" style="color: var(--text-primary);">{result.name}</span>
 				<button
 					onclick={() => copyDomain(result.domain)}
-					class="inline-flex items-center justify-center w-4 h-4 rounded border-0 cursor-pointer shrink-0"
+					class="hidden sm:inline-flex items-center justify-center w-4 h-4 rounded border-0 cursor-pointer shrink-0"
 					style="background: transparent; color: {copiedDomains.has(result.domain) ? 'var(--success)' : 'var(--text-muted)'}; font-size: 0.6rem; padding: 0;"
 					title="Copy domain"
 				>{copiedDomains.has(result.domain) ? '\u2713' : '\u2398'}</button>
@@ -142,7 +140,7 @@
 					>verify</button>
 					<button
 						onclick={() => app.openWhois(result.domain)}
-						class="text-xs px-1 py-0 rounded border-0 cursor-pointer shrink-0"
+						class="hidden sm:inline-block text-xs px-1 py-0 rounded border-0 cursor-pointer shrink-0"
 						style="background: transparent; color: var(--text-muted); font-size: 0.6rem;"
 						title="Whois lookup"
 					>WH</button>
@@ -150,7 +148,7 @@
 				{:else if result.status === 'taken' || result.status === 'reserved'}
 					<button
 						onclick={() => app.openWhois(result.domain)}
-						class="text-xs px-1 py-0 rounded border-0 cursor-pointer shrink-0"
+						class="hidden sm:inline-block text-xs px-1 py-0 rounded border-0 cursor-pointer shrink-0"
 						style="background: transparent; color: var(--text-muted); font-size: 0.6rem;"
 						title="Whois lookup"
 					>WH</button>
