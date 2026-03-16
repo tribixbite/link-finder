@@ -81,10 +81,14 @@ async function probeLocalApi(): Promise<boolean> {
 	return false;
 }
 
+/** Cached auto-detected mode — stable within a session to avoid bouncing */
+let _autoDetectedMode: ResolverMode | null = null;
+
 /**
  * Auto-detect the best available resolver mode.
  * Checks localStorage for a forced override first, then probes local API
  * and edge worker in parallel, falling back to browser DoH.
+ * Result is cached for the session to prevent mode bouncing.
  */
 export async function detectMode(): Promise<ResolverMode> {
 	// Check for forced mode in localStorage
@@ -97,6 +101,9 @@ export async function detectMode(): Promise<ResolverMode> {
 		}
 	} catch { /* localStorage unavailable */ }
 
+	// Return cached auto-detected mode if available (prevents bouncing)
+	if (_autoDetectedMode) return _autoDetectedMode;
+
 	// Probe local API and Worker in parallel
 	const workerUrl = (() => {
 		try { return localStorage.getItem(LS_WORKER_URL) || DEFAULT_WORKER_URL; }
@@ -108,9 +115,15 @@ export async function detectMode(): Promise<ResolverMode> {
 		probe(`${workerUrl}/health`, WORKER_PROBE_TIMEOUT),
 	]);
 
-	if (apiOk) return 'local-api';
-	if (workerOk) return 'edge-worker';
-	return 'browser-doh';
+	if (apiOk) _autoDetectedMode = 'local-api';
+	else if (workerOk) _autoDetectedMode = 'edge-worker';
+	else _autoDetectedMode = 'browser-doh';
+	return _autoDetectedMode;
+}
+
+/** Clear the auto-detected mode cache (used when switching back to auto) */
+export function clearAutoDetectedCache() {
+	_autoDetectedMode = null;
 }
 
 /**

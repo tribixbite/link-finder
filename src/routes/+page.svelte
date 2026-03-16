@@ -69,15 +69,15 @@
 	// Guarded by _urlInitialized to avoid overwriting URL params before onMount processes them
 	$effect(() => {
 		if (!_urlInitialized) return;
-		const search = encodeSearchParams({
-			terms: app.termsInput || undefined,
-			tlds: app.selectedTlds.size > 0 ? [...app.selectedTlds] : undefined,
-			mutations: app.selectedMutations.size > 0 ? [...app.selectedMutations] : undefined,
-			sort: app.sort,
-			status: app.filters.status,
-		});
+		// Snapshot reactive values upfront so Svelte tracks them
+		const terms = app.termsInput || undefined;
+		const tlds = app.selectedTlds.size > 0 ? [...app.selectedTlds] : undefined;
+		const mutations = app.selectedMutations.size > 0 ? [...app.selectedMutations] : undefined;
+		const sort = { field: app.sort.field, dir: app.sort.dir };
+		const status = app.filters.status;
 		if (urlSyncTimer) clearTimeout(urlSyncTimer);
 		urlSyncTimer = setTimeout(() => {
+			const search = encodeSearchParams({ terms, tlds, mutations, sort, status });
 			const url = new URL(window.location.href);
 			const newUrl = `${url.pathname}${search}`;
 			if (newUrl !== `${url.pathname}${url.search}`) {
@@ -99,8 +99,8 @@
 			if (urlState.status) app.setStatusFilter(urlState.status);
 		}
 
-		// Enable URL sync after initial state is set
-		_urlInitialized = true;
+		// Enable URL sync after a microtask to ensure all URL-derived state has settled
+		queueMicrotask(() => { _urlInitialized = true; });
 	});
 
 	/** j/k keyboard navigation for domain cards */

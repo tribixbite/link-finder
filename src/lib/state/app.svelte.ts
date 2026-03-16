@@ -21,7 +21,7 @@ import type {
 } from '../types';
 import { DEFAULT_TLDS, DEFAULT_MUTATIONS, LIST_COLORS, REGISTRARS } from '../types';
 import { SPACESHIP_TLDS, NAMECHEAP_TLDS, CLOUDFLARE_TLDS } from '../registrar-tlds';
-import { detectMode, createResolver, MODE_LABELS, getApiBaseUrl } from '../resolvers';
+import { detectMode, createResolver, MODE_LABELS, getApiBaseUrl, clearAutoDetectedCache } from '../resolvers';
 import { DEFAULT_WORKER_URL } from '../resolvers/worker-resolver';
 import type { Resolver, ResolverResult } from '../resolvers';
 
@@ -1334,6 +1334,8 @@ class AppState {
 		try {
 			localStorage.removeItem('findur-resolver-mode');
 		} catch { /* ignore */ }
+		// Clear cached auto-detection so a fresh probe runs
+		clearAutoDetectedCache();
 		detectMode().then((mode) => {
 			this.resolverMode = mode;
 			_resolver = createResolver(mode);
