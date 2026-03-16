@@ -1,0 +1,33 @@
+{
+  "name": "findurlink",
+  "version": "1.0.0",
+  "description": "Local DNS API server for findur.link — dig + whois domain availability checks",
+  "bin": {
+    "findurlink": "./bin/findurlink.mjs"
+  },
+  "type": "module",
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "keywords": [
+    "domain",
+    "dns",
+    "whois",
+    "availability",
+    "dig",
+    "domain-search",
+    "findur"
+  ],
+  "author": "tribixbite",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tribixbite/link-finder"
+  },
+  "homepage": "https://findur.link",
+  "engines": {
+    "node": ">=18",
+    "bun": ">=1.0"
+  }
+}

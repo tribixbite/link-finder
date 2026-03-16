@@ -1,0 +1,12 @@
+{
+	"version": "1.0",
+	"type": "link",
+	"title": "findur.link — Domain Name Search",
+	"author_name": "findur.link",
+	"author_url": "https://findur.link",
+	"provider_name": "findur.link",
+	"provider_url": "https://findur.link",
+	"thumbnail_url": "https://findur.link/og-image.png",
+	"thumbnail_width": 1200,
+	"thumbnail_height": 630
+}

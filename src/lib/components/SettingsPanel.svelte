@@ -74,6 +74,15 @@
 		{/each}
 	</div>
 
+	<!-- Local API hint — shown when local-api is active or forced -->
+	{#if forcedMode === 'local-api' || app.resolverMode === 'local-api'}
+		<div class="flex flex-col gap-1 px-2 py-1.5 rounded text-xs" style="background: var(--accent-muted); color: var(--text-secondary);">
+			<span style="color: var(--accent);">Run the API server:</span>
+			<code class="select-all" style="color: var(--text-primary); font-size: 0.7rem;">npx findurlink</code>
+			<span style="color: var(--text-muted);">Requires dig + whois installed</span>
+		</div>
+	{/if}
+
 	<!-- Worker URL field — shown only when edge-worker is active or forced -->
 	{#if app.resolverMode === 'edge-worker' || forcedMode === 'edge-worker'}
 		<div class="flex flex-col gap-1">
