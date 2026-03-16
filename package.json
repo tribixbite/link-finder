@@ -8,7 +8,8 @@
     "preview": "bun ./scripts/vite-cli.ts preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "api": "bun ./scripts/api-server.ts",
-    "postinstall": "sh postinstall.sh"
+    "postinstall": "sh postinstall.sh",
+    "publish": "cd packages/findurlink && npm publish"
   },
   "devDependencies": {
     "@rollup/rollup-android-arm64": "4.59.0",

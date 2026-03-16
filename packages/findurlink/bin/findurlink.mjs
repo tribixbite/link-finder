@@ -16,15 +16,15 @@ import { createConnection } from 'node:net';
 
 const execFileAsync = promisify(execFile);
 
-/** Parse --port / -p from argv, fallback to PORT env, then auto-scan */
-function parsePort() {
+/** Parse --port / -p from argv or PORT env */
+function parseExplicitPort() {
 	const args = process.argv.slice(2);
 	for (let i = 0; i < args.length; i++) {
 		if ((args[i] === '--port' || args[i] === '-p') && args[i + 1]) return parseInt(args[i + 1], 10);
 		if (args[i].startsWith('--port=')) return parseInt(args[i].split('=')[1], 10);
 	}
 	if (process.env.PORT) return parseInt(process.env.PORT, 10);
-	return 0; // 0 = auto-scan
+	return null; // null = auto-scan
 }
 
 /** Check if a port is free */
@@ -37,25 +37,24 @@ function isPortFree(port) {
 	});
 }
 
-/** Find an available port from candidates */
-async function findPort(preferred) {
-	if (preferred) {
-		if (await isPortFree(preferred)) return preferred;
-		console.error(`\x1b[33mPort ${preferred} in use\x1b[0m`);
-		// If explicitly specified, don't auto-scan — fail fast
-		if (process.env.PORT || process.argv.some(a => a === '-p' || a === '--port' || a.startsWith('--port='))) {
-			process.exit(1);
-		}
-	}
-	const candidates = [3001, 3002, 3003, 3004, 3005, 3010, 3100, 4001, 8001];
-	for (const port of candidates) {
+const CANDIDATE_PORTS = [3001, 3002, 3003, 3004, 3005, 3010, 3100, 4001, 8001];
+
+/** Find an available port — auto-scans candidates, always succeeds */
+async function findPort(explicit) {
+	// If explicitly set, try that first then auto-scan
+	const ports = explicit
+		? [explicit, ...CANDIDATE_PORTS.filter(p => p !== explicit)]
+		: CANDIDATE_PORTS;
+
+	for (const port of ports) {
 		if (await isPortFree(port)) return port;
+		if (port === explicit) console.log(`\x1b[33mPort ${port} in use, trying next...\x1b[0m`);
 	}
 	// Last resort: let OS pick
 	return 0;
 }
 
-const REQUESTED_PORT = parsePort();
+const EXPLICIT_PORT = parseExplicitPort();
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 const MAX_CONCURRENT_DIG = 12;
 const MAX_CONCURRENT_WHOIS = 4;
@@ -395,7 +394,7 @@ async function checkDeps() {
 
 await checkDeps();
 
-const PORT = await findPort(REQUESTED_PORT);
+const PORT = await findPort(EXPLICIT_PORT);
 fetchPricing();
 
 server.listen(PORT, () => {
