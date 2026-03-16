@@ -79,8 +79,8 @@ export type RegistrarId = 'namecheap' | 'porkbun' | 'cloudflare' | 'spaceship';
 export const REGISTRARS: Record<RegistrarId, { name: string; color: string; url: (d: string) => string }> = {
 	namecheap:  { name: 'Namecheap',  color: '#fe5803', url: (d) => `https://www.namecheap.com/domains/registration/results/?domain=${encodeURIComponent(d)}` },
 	porkbun:    { name: 'Porkbun',    color: '#ef6f9a', url: (d) => `https://porkbun.com/checkout/search?q=${encodeURIComponent(d)}` },
-	cloudflare: { name: 'Cloudflare', color: '#f6821f', url: () => `https://www.cloudflare.com/products/registrar/` },
-	spaceship:  { name: 'Spaceship',  color: '#635bff', url: () => `https://www.spaceship.com/domain-search/` },
+	cloudflare: { name: 'Cloudflare', color: '#f6821f', url: (d) => `https://dash.cloudflare.com/?to=/:account/domains/register/${encodeURIComponent(d)}` },
+	spaceship:  { name: 'Spaceship',  color: '#635bff', url: (d) => `https://www.spaceship.com/domain-search/?query=${encodeURIComponent(d)}` },
 };
 
 export const REGISTRAR_IDS = Object.keys(REGISTRARS) as RegistrarId[];
