@@ -13,8 +13,15 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:http';
 import { createConnection } from 'node:net';
+import { writeFile, readFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir, homedir } from 'node:os';
 
 const execFileAsync = promisify(execFile);
+
+/** Persistent pricing cache directory */
+const CACHE_DIR = join(homedir(), '.cache', 'findurlink');
+const CACHE_FILE = join(CACHE_DIR, 'pricing.json');
 
 /** Parse --port / -p from argv or PORT env */
 function parseExplicitPort() {
@@ -239,8 +246,34 @@ let _pricingCache = {};
 let _pricingFetchedAt = 0;
 let _pricingPromise = null;
 let _registrarTlds = {};
+let _retryTimer = null;
 
-async function fetchPricing() {
+/** Restore pricing from disk cache */
+async function restorePricingCache() {
+	try {
+		const raw = await readFile(CACHE_FILE, 'utf-8');
+		const cached = JSON.parse(raw);
+		if (cached.pricing && cached.fetchedAt) {
+			_pricingCache = cached.pricing;
+			_pricingFetchedAt = cached.fetchedAt;
+			const porkbunTlds = Object.keys(cached.pricing);
+			_registrarTlds = cached.registrars || { porkbun: porkbunTlds, namecheap: NAMECHEAP_TLDS, spaceship: SPACESHIP_TLDS, cloudflare: CLOUDFLARE_TLDS };
+			console.log(`Pricing restored from cache: ${porkbunTlds.length} TLDs (cached ${Math.round((Date.now() - cached.fetchedAt) / 60000)}m ago)`);
+			return true;
+		}
+	} catch { /* no cache file — that's fine */ }
+	return false;
+}
+
+/** Persist pricing to disk cache */
+async function persistPricingCache() {
+	try {
+		await mkdir(CACHE_DIR, { recursive: true });
+		await writeFile(CACHE_FILE, JSON.stringify({ pricing: _pricingCache, registrars: _registrarTlds, fetchedAt: _pricingFetchedAt }));
+	} catch { /* write failed — non-critical */ }
+}
+
+async function fetchPricing(retryCount = 0) {
 	if (_pricingPromise) return _pricingPromise;
 	_pricingPromise = (async () => {
 		try {
@@ -259,8 +292,18 @@ async function fetchPricing() {
 				const porkbunTlds = Object.keys(parsed);
 				_registrarTlds = { porkbun: porkbunTlds, namecheap: NAMECHEAP_TLDS, spaceship: SPACESHIP_TLDS, cloudflare: CLOUDFLARE_TLDS };
 				console.log(`Pricing cached: ${porkbunTlds.length} TLDs`);
+				persistPricingCache();
 			}
-		} catch (err) { console.error('Failed to fetch pricing:', err); }
+		} catch (err) {
+			const hasCache = Object.keys(_pricingCache).length > 0;
+			console.error(`Failed to fetch pricing: ${err.message || err}${hasCache ? ' (using cached data)' : ''}`);
+			// Retry with exponential backoff (max 3 retries, 5s/15s/45s)
+			if (retryCount < 3) {
+				const delay = 5000 * Math.pow(3, retryCount);
+				console.log(`  Retrying in ${delay / 1000}s...`);
+				_retryTimer = setTimeout(() => fetchPricing(retryCount + 1), delay);
+			}
+		}
 		finally { _pricingPromise = null; }
 	})();
 	return _pricingPromise;
@@ -396,6 +439,8 @@ async function checkDeps() {
 await checkDeps();
 
 const PORT = await findPort(EXPLICIT_PORT);
+// Restore cached pricing first (instant), then fetch fresh in background
+await restorePricingCache();
 fetchPricing();
 
 server.listen(PORT, () => {

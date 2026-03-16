@@ -698,12 +698,45 @@ class AppState {
 
 	// --- Pricing methods ---
 
+	/** Restore pricing from localStorage cache (instant, no network) */
+	private restorePricingCache() {
+		try {
+			const raw = localStorage.getItem('findur-pricing-cache');
+			if (!raw) return;
+			const cached = JSON.parse(raw) as { pricing: Record<string, TldPricing>; registrars: Record<string, string[]>; fetchedAt: number };
+			if (!cached.pricing || !cached.fetchedAt) return;
+			const map = new Map<string, TldPricing>();
+			for (const [tld, p] of Object.entries(cached.pricing)) map.set(tld, p);
+			this.pricing = map;
+			if (cached.registrars) {
+				const rmap = new Map<RegistrarId, Set<string>>();
+				for (const [rid, tlds] of Object.entries(cached.registrars)) rmap.set(rid as RegistrarId, new Set(tlds));
+				this.registrarTlds = rmap;
+			}
+		} catch { /* corrupt cache — ignore */ }
+	}
+
+	/** Persist pricing to localStorage for offline/error resilience */
+	private persistPricingCache() {
+		try {
+			const pricing: Record<string, TldPricing> = {};
+			for (const [tld, p] of this.pricing) pricing[tld] = p;
+			const registrars: Record<string, string[]> = {};
+			for (const [rid, tlds] of this.registrarTlds) registrars[rid] = [...tlds];
+			localStorage.setItem('findur-pricing-cache', JSON.stringify({ pricing, registrars, fetchedAt: Date.now() }));
+		} catch { /* quota exceeded — ignore */ }
+	}
+
 	/** Fetch TLD pricing + registrar TLD support from API or Porkbun direct */
 	async fetchPricing() {
+		// Restore cached pricing immediately so UI has data while we fetch fresh
+		if (this.pricing.size === 0) this.restorePricingCache();
+
 		try {
 			// Try local API first if in that mode
 			if (_resolver?.mode === 'local-api') {
 				const res = await fetch(`${getApiBaseUrl()}/pricing`);
+				if (!res.ok) throw new Error(`API HTTP ${res.status}`);
 				const data = await res.json() as {
 					pricing: Record<string, TldPricing>;
 					registrars: Record<string, string[]>;
@@ -718,6 +751,7 @@ class AppState {
 					for (const [rid, tlds] of Object.entries(data.registrars)) rmap.set(rid as RegistrarId, new Set(tlds));
 					this.registrarTlds = rmap;
 				}
+				this.persistPricingCache();
 				return;
 			}
 
@@ -744,9 +778,10 @@ class AppState {
 				rmap.set('spaceship', new Set(SPACESHIP_TLDS));
 				rmap.set('cloudflare', new Set(CLOUDFLARE_TLDS));
 				this.registrarTlds = rmap;
+				this.persistPricingCache();
 			}
 		} catch {
-			// Pricing is optional — silently fail
+			// Pricing fetch failed — cached data (if any) remains active
 		}
 	}
 

@@ -446,6 +446,9 @@ async function runWhoisDetail(domain: string): Promise<{
 }
 
 import { SPACESHIP_TLDS, NAMECHEAP_TLDS, CLOUDFLARE_TLDS } from '../src/lib/registrar-tlds';
+import { writeFile, readFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 /** Porkbun TLD pricing cache */
 interface TldPricingEntry {
@@ -462,8 +465,35 @@ let _pricingPromise: Promise<void> | null = null;
  */
 let _registrarTlds: Record<string, string[]> = {};
 
+const CACHE_DIR = join(homedir(), '.cache', 'findurlink');
+const CACHE_FILE = join(CACHE_DIR, 'pricing.json');
+
+/** Restore pricing from disk cache */
+async function restorePricingCache(): Promise<boolean> {
+	try {
+		const raw = await readFile(CACHE_FILE, 'utf-8');
+		const cached = JSON.parse(raw);
+		if (cached.pricing && cached.fetchedAt) {
+			_pricingCache = cached.pricing;
+			_pricingFetchedAt = cached.fetchedAt;
+			_registrarTlds = cached.registrars || {};
+			console.log(`Pricing restored from cache: ${Object.keys(cached.pricing).length} TLDs (cached ${Math.round((Date.now() - cached.fetchedAt) / 60000)}m ago)`);
+			return true;
+		}
+	} catch { /* no cache file */ }
+	return false;
+}
+
+/** Persist pricing to disk */
+async function persistPricingCache(): Promise<void> {
+	try {
+		await mkdir(CACHE_DIR, { recursive: true });
+		await writeFile(CACHE_FILE, JSON.stringify({ pricing: _pricingCache, registrars: _registrarTlds, fetchedAt: _pricingFetchedAt }));
+	} catch { /* non-critical */ }
+}
+
 /** Fetch TLD pricing from Porkbun (public, no auth needed) */
-async function fetchPricing(): Promise<void> {
+async function fetchPricing(retryCount = 0): Promise<void> {
 	// Deduplicate concurrent fetches
 	if (_pricingPromise) return _pricingPromise;
 	_pricingPromise = (async () => {
@@ -485,7 +515,6 @@ async function fetchPricing(): Promise<void> {
 				}
 				_pricingCache = parsed;
 				_pricingFetchedAt = Date.now();
-				// Build registrar TLD support from Porkbun response + curated lists
 				const porkbunTlds = Object.keys(parsed);
 				_registrarTlds = {
 					porkbun: porkbunTlds,
@@ -494,9 +523,16 @@ async function fetchPricing(): Promise<void> {
 					cloudflare: CLOUDFLARE_TLDS,
 				};
 				console.log(`Pricing cached: ${porkbunTlds.length} TLDs, registrar support built`);
+				persistPricingCache();
 			}
 		} catch (err) {
-			console.error('Failed to fetch pricing:', err);
+			const hasCache = Object.keys(_pricingCache).length > 0;
+			console.error(`Failed to fetch pricing: ${err instanceof Error ? err.message : err}${hasCache ? ' (using cached data)' : ''}`);
+			if (retryCount < 3) {
+				const delay = 5000 * Math.pow(3, retryCount);
+				console.log(`  Retrying in ${delay / 1000}s...`);
+				setTimeout(() => fetchPricing(retryCount + 1), delay);
+			}
 		} finally {
 			_pricingPromise = null;
 		}
@@ -512,7 +548,8 @@ async function getPricing(): Promise<{ pricing: Record<string, TldPricingEntry>;
 	return { pricing: _pricingCache, registrars: _registrarTlds };
 }
 
-// Pre-warm pricing cache on startup
+// Restore cache first, then fetch fresh in background
+await restorePricingCache();
 fetchPricing();
 
 Bun.serve({
