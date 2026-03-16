@@ -87,7 +87,7 @@ interface DohResponse {
 
 interface CheckResult {
 	domain: string;
-	status: 'available' | 'taken' | 'reserved' | 'error';
+	status: 'available' | 'likely-available' | 'taken' | 'reserved' | 'error';
 	records: string[];
 	error?: string;
 	method: 'worker';
@@ -130,11 +130,11 @@ async function checkDomain(domain: string): Promise<CheckResult> {
 					// RDAP found it — registered despite NXDOMAIN (parked/held/no DNS)
 					return { domain, status: 'taken', records: [], method: 'worker' };
 				}
-				// RDAP returned non-404/non-OK (429, 500, etc.) — can't confirm, mark unverified
-				return { domain, status: 'available', records: [], error: `RDAP unverified (HTTP ${rdapRes.status})`, method: 'worker' };
+				// RDAP returned non-404/non-OK (429, 500, etc.) — can't confirm
+				return { domain, status: 'likely-available', records: [], error: `RDAP unverified (HTTP ${rdapRes.status})`, method: 'worker' };
 			} catch {
-				// RDAP network error — can't confirm, mark unverified
-				return { domain, status: 'available', records: [], error: 'RDAP unavailable', method: 'worker' };
+				// RDAP network error — can't confirm
+				return { domain, status: 'likely-available', records: [], error: 'RDAP unavailable', method: 'worker' };
 			}
 		}
 

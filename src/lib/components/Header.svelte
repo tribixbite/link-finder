@@ -5,6 +5,13 @@
 
 	let dropdownOpen = $state(false);
 
+	/** Short labels for mobile badge */
+	const SHORT_LABELS: Record<ResolverMode, string> = {
+		'local-api': 'Local',
+		'edge-worker': 'Edge',
+		'browser-doh': 'DoH',
+	};
+
 	const modes: { value: ResolverMode | 'auto'; label: string; desc: string }[] = [
 		{ value: 'auto', label: 'Auto-detect', desc: 'Probe local → worker → browser' },
 		{ value: 'local-api', label: 'Local API', desc: 'dig + whois (npx findurlink)' },
@@ -61,29 +68,30 @@
 	>Offline — DNS lookups unavailable</div>
 {/if}
 <header
-	class="sticky top-0 z-30 flex items-center justify-between px-4 py-3 border-b"
+	class="sticky top-0 z-30 flex items-center justify-between px-3 py-2 border-b sm:px-4 sm:py-3"
 	style="background: var(--bg-secondary); border-color: var(--border);"
 >
-	<div class="flex items-center gap-3">
-		<a href="/" class="flex items-center gap-2 no-underline">
-			<img src="/favicon.svg" alt="findur.link" class="w-7 h-7" />
-			<span
-				class="text-xl font-bold tracking-tight"
-				style="color: var(--accent); font-family: ui-monospace, monospace;"
-			>findur<span style="color: var(--text-muted); font-weight: 400;">.link</span></span>
-		</a>
-	</div>
+	<a href="/" class="flex items-center gap-1.5 no-underline shrink-0 sm:gap-2">
+		<img src="/favicon.svg" alt="findur.link" class="w-6 h-6 sm:w-7 sm:h-7" />
+		<span
+			class="hidden sm:inline text-xl font-bold tracking-tight"
+			style="color: var(--accent); font-family: ui-monospace, monospace;"
+		>findur<span style="color: var(--text-muted); font-weight: 400;">.link</span></span>
+	</a>
 
-	<div class="flex items-center gap-2">
+	<div class="flex items-center gap-1.5 sm:gap-2">
 		<!-- Resolver mode badge + dropdown -->
 		{#if app.resolverReady}
 			<div class="relative" data-resolver-dropdown>
 				<button
 					onclick={(e) => { e.stopPropagation(); dropdownOpen = !dropdownOpen; }}
-					class="text-xs px-2 py-0.5 rounded-full cursor-pointer border transition-colors"
+					class="text-xs px-1.5 py-0.5 rounded-full cursor-pointer border transition-colors whitespace-nowrap sm:px-2"
 					style="background: {dropdownOpen ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {dropdownOpen ? 'var(--accent)' : 'var(--text-muted)'}; border-color: {dropdownOpen ? 'var(--accent)' : 'var(--border)'};"
 					title="Change DNS resolver mode"
-				>{MODE_LABELS[app.resolverMode]} ▾</button>
+				>
+					<span class="sm:hidden">{SHORT_LABELS[app.resolverMode]} ▾</span>
+					<span class="hidden sm:inline">{MODE_LABELS[app.resolverMode]} ▾</span>
+				</button>
 
 				{#if dropdownOpen}
 					<div
@@ -139,8 +147,8 @@
 		{/if}
 
 		{#if app.results.size > 0}
-			<span class="text-xs tabular-nums" style="color: var(--text-muted);">
-				{app.availableCount + app.likelyAvailableCount} avail / {app.results.size} checked
+			<span class="hidden xs:inline text-xs tabular-nums" style="color: var(--text-muted);">
+				{app.availableCount + app.likelyAvailableCount}/{app.results.size}
 			</span>
 		{/if}
 
@@ -148,7 +156,7 @@
 		{#if app.monitorEntries.length > 0}
 			<button
 				onclick={() => { app.monitorPanelOpen = !app.monitorPanelOpen; }}
-				class="relative p-2 rounded-lg transition-colors cursor-pointer border-0"
+				class="relative p-1.5 rounded-lg transition-colors cursor-pointer border-0 sm:p-2"
 				style="background: var(--bg-tertiary); color: {app.monitorConfig.enabled ? 'var(--accent)' : 'var(--text-secondary)'};"
 				title="Domain monitor ({app.monitorEntries.length})"
 			>
@@ -163,7 +171,7 @@
 		<!-- Saved domains button -->
 		<button
 			onclick={() => { app.savedViewOpen = !app.savedViewOpen; }}
-			class="relative p-2 rounded-lg transition-colors cursor-pointer border-0"
+			class="relative p-1.5 rounded-lg transition-colors cursor-pointer border-0 sm:p-2"
 			style="background: var(--bg-tertiary); color: {app.savedCount > 0 ? 'var(--warning)' : 'var(--text-secondary)'};"
 			title="Saved domains ({app.savedCount})"
 		>
@@ -186,7 +194,7 @@
 
 		<button
 			onclick={() => app.toggleTheme()}
-			class="p-2 rounded-lg transition-colors cursor-pointer border-0"
+			class="p-1.5 rounded-lg transition-colors cursor-pointer border-0 sm:p-2"
 			style="background: var(--bg-tertiary); color: var(--text-secondary);"
 			title="Toggle theme"
 		>
