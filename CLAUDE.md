@@ -62,11 +62,11 @@ bun run preview    # Preview production build
 - Commit messages: conventional commits, sign with emdash + model version (no co-authored-by)
 
 ## localStorage Keys
-All prefixed `digr-`. Schema version at `digr-schema-version` (current: 2). Max 2000 results persisted.
+All prefixed `findur-`. Schema version at `findur-schema-version` (current: 2). Max 2000 results persisted.
 
 Resolver keys:
-- `digr-resolver-mode` — forced resolver mode override (`local-api` | `edge-worker` | `browser-doh`)
-- `digr-worker-url` — custom Cloudflare Worker URL (default: `https://digr-dns.workers.dev`)
+- `findur-resolver-mode` — forced resolver mode override (`local-api` | `edge-worker` | `browser-doh`)
+- `findur-worker-url` — custom Cloudflare Worker URL (default: `https://digr-dns.tribixbite.workers.dev`)
 
 ## Environment Variables
 | Variable | Default | Description |
