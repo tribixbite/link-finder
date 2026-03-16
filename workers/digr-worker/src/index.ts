@@ -216,6 +216,54 @@ async function rdapLookup(domain: string): Promise<Response> {
 	}
 }
 
+/** Pricing cache (in Worker global scope, reset on cold start) */
+let _pricingCache: string | null = null;
+let _pricingFetchedAt = 0;
+const PRICING_TTL_MS = 60 * 60 * 1000; // 1h
+
+/** Proxy Porkbun pricing API (no CORS on their end) */
+async function handlePricing(): Promise<Response> {
+	// Serve cached if fresh
+	if (_pricingCache && Date.now() - _pricingFetchedAt < PRICING_TTL_MS) {
+		return new Response(_pricingCache, {
+			headers: { ...CORS, 'Content-Type': 'application/json' },
+		});
+	}
+	try {
+		const res = await fetch('https://api.porkbun.com/api/json/v3/pricing/get', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ apikey: '', secretapikey: '' }),
+		});
+		if (!res.ok) throw new Error(`Porkbun HTTP ${res.status}`);
+		const data = await res.json() as { status: string; pricing?: Record<string, { registration?: string; renewal?: string }> };
+		if (data.status === 'SUCCESS' && data.pricing) {
+			const pricing: Record<string, { registration: string; renewal: string }> = {};
+			for (const [tld, prices] of Object.entries(data.pricing)) {
+				pricing[tld] = { registration: prices.registration || '0', renewal: prices.renewal || '0' };
+			}
+			const body = JSON.stringify({ pricing });
+			_pricingCache = body;
+			_pricingFetchedAt = Date.now();
+			return new Response(body, {
+				headers: { ...CORS, 'Content-Type': 'application/json' },
+			});
+		}
+		throw new Error('Porkbun API returned unexpected format');
+	} catch (err) {
+		// Return cached data on error, or empty
+		if (_pricingCache) {
+			return new Response(_pricingCache, {
+				headers: { ...CORS, 'Content-Type': 'application/json' },
+			});
+		}
+		return new Response(JSON.stringify({ pricing: {}, error: err instanceof Error ? err.message : 'pricing unavailable' }), {
+			status: 502,
+			headers: { ...CORS, 'Content-Type': 'application/json' },
+		});
+	}
+}
+
 /** Handle POST /check — stream results */
 async function handleCheck(request: Request): Promise<Response> {
 	const body = await request.json() as { domains?: string[] };
@@ -285,6 +333,11 @@ export default {
 		// Domain check (streaming)
 		if (url.pathname === '/check' && request.method === 'POST') {
 			return handleCheck(request);
+		}
+
+		// Pricing proxy (Porkbun doesn't support CORS)
+		if (url.pathname === '/pricing') {
+			return handlePricing();
 		}
 
 		// RDAP lookup

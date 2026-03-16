@@ -22,6 +22,7 @@ import type {
 import { DEFAULT_TLDS, DEFAULT_MUTATIONS, LIST_COLORS, REGISTRARS } from '../types';
 import { SPACESHIP_TLDS, NAMECHEAP_TLDS, CLOUDFLARE_TLDS } from '../registrar-tlds';
 import { detectMode, createResolver, MODE_LABELS, getApiBaseUrl } from '../resolvers';
+import { DEFAULT_WORKER_URL } from '../resolvers/worker-resolver';
 import type { Resolver, ResolverResult } from '../resolvers';
 
 /** Parse terms from user input (comma, newline, or space separated) */
@@ -752,15 +753,15 @@ class AppState {
 				return;
 			}
 
-			// Direct Porkbun API call (public, CORS-enabled)
-			const res = await fetch('https://api.porkbun.com/api/json/v3/pricing/get', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ apikey: '', secretapikey: '' }),
-			});
-			if (!res.ok) throw new Error(`Porkbun HTTP ${res.status}`);
-			const data = await res.json() as { status: string; pricing?: Record<string, { registration?: string; renewal?: string }> };
-			if (data.status === 'SUCCESS' && data.pricing) {
+			// Proxy pricing through edge worker (Porkbun blocks CORS from browser)
+			const workerUrl = (() => {
+				try { return localStorage.getItem('findur-worker-url') || DEFAULT_WORKER_URL; }
+				catch { return DEFAULT_WORKER_URL; }
+			})();
+			const res = await fetch(`${workerUrl}/pricing`);
+			if (!res.ok) throw new Error(`Worker pricing HTTP ${res.status}`);
+			const data = await res.json() as { pricing?: Record<string, { registration?: string; renewal?: string }> };
+			if (data.pricing) {
 				const map = new Map<string, TldPricing>();
 				const porkbunTlds: string[] = [];
 				for (const [tld, prices] of Object.entries(data.pricing)) {
@@ -768,7 +769,6 @@ class AppState {
 					porkbunTlds.push(tld);
 				}
 				this.pricing = map;
-				// Build registrar TLD support from Porkbun response + curated lists
 				const rmap = new Map<RegistrarId, Set<string>>();
 				rmap.set('porkbun', new Set(porkbunTlds));
 				rmap.set('namecheap', new Set(NAMECHEAP_TLDS));
