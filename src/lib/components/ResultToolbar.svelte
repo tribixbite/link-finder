@@ -51,6 +51,8 @@
 				(of {app.results.size})
 			</span>
 		{/if}
+
+		<HelpBadge topic="verify-button" />
 	</div>
 
 	<div class="flex flex-wrap items-center gap-1.5">
@@ -63,7 +65,6 @@
 				title="Re-check results older than 24 hours"
 			>Stale ({app.staleCount})</button>
 		{/if}
-		<HelpBadge topic="verify-button" />
 
 		<!-- Clear results -->
 		<button
