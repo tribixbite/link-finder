@@ -3,6 +3,7 @@
 	import { MUTATION_INFO, REGISTRARS, REGISTRAR_IDS } from '$lib/types';
 	import type { MutationType } from '$lib/types';
 	import SettingsPanel from './SettingsPanel.svelte';
+	import HelpBadge from './HelpBadge.svelte';
 
 	/** Controls visibility of the collapsible settings section */
 	let showSettings = $state(false);
@@ -140,7 +141,7 @@
 	<!-- Registrar filter -->
 	{#if app.registrarTlds.size > 0}
 		<div>
-			<span class="block text-xs font-medium mb-1.5" style="color: var(--text-muted);">Registrar</span>
+			<span class="block text-xs font-medium mb-1.5" style="color: var(--text-muted);">Registrar <HelpBadge topic="registrar-filter" /></span>
 			<div class="flex flex-wrap gap-1">
 				{#each REGISTRAR_IDS as rid}
 					{@const reg = REGISTRARS[rid]}

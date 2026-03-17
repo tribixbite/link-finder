@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
 	import { toasts } from '$lib/state/toasts.svelte';
+	import HelpBadge from './HelpBadge.svelte';
 
 	async function copyAvailable() {
 		const text = app.exportAvailable();
@@ -62,6 +63,7 @@
 				title="Re-check results older than 24 hours"
 			>Stale ({app.staleCount})</button>
 		{/if}
+		<HelpBadge topic="verify-button" />
 
 		<!-- Clear results -->
 		<button

@@ -55,6 +55,7 @@
 
 	import RegistrarMenu from './RegistrarMenu.svelte';
 	import SaveBookmarkButton from './SaveBookmarkButton.svelte';
+	import HelpBadge from './HelpBadge.svelte';
 
 	const statusColors: Record<string, string> = {
 		available: 'var(--available)',
@@ -91,6 +92,9 @@
 					<span>{app.sort.dir === 'asc' ? '\u25B2' : '\u25BC'}</span>
 				{/if}
 			</button>
+			{#if col.field === 'price'}
+				<HelpBadge topic="pricing" />
+			{/if}
 		{/each}
 		<div class="w-14 text-right hidden sm:block" style="color: var(--text-muted);">Age</div>
 		<div class="w-7"></div>

@@ -195,6 +195,91 @@ body { margin: 0; min-height: 100dvh; }
 	animation: pulse-dot 1.2s ease-in-out infinite;
 }
 
+/* Help badge — small inline info button for tutorial mode */
+.help-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	border: 1px solid var(--accent);
+	background: var(--accent-muted);
+	color: var(--accent);
+	font-size: 10px;
+	font-style: italic;
+	font-family: Georgia, 'Times New Roman', serif;
+	cursor: pointer;
+	flex-shrink: 0;
+	line-height: 1;
+	padding: 0;
+	transition: background 0.15s, color 0.15s;
+	vertical-align: middle;
+}
+
+.help-badge:hover {
+	background: var(--accent);
+	color: var(--bg-primary);
+}
+
+/* Help modal body prose styles */
+.help-body {
+	font-size: 0.825rem;
+	line-height: 1.6;
+	color: var(--text-secondary);
+}
+
+.help-body p {
+	margin: 0 0 0.75rem;
+}
+
+.help-body p:last-child {
+	margin-bottom: 0;
+}
+
+.help-body ul, .help-body ol {
+	margin: 0 0 0.75rem;
+	padding-left: 1.25rem;
+}
+
+.help-body li {
+	margin-bottom: 0.25rem;
+}
+
+.help-body code {
+	background: var(--bg-tertiary);
+	color: var(--accent);
+	padding: 1px 5px;
+	border-radius: 4px;
+	font-size: 0.8rem;
+	font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.help-body pre {
+	background: var(--bg-tertiary);
+	color: var(--text-primary);
+	padding: 8px 12px;
+	border-radius: 6px;
+	font-size: 0.8rem;
+	font-family: ui-monospace, SFMono-Regular, monospace;
+	overflow-x: auto;
+	margin: 0 0 0.75rem;
+}
+
+.help-body kbd {
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 1px 5px;
+	font-size: 0.75rem;
+	font-family: ui-monospace, SFMono-Regular, monospace;
+	color: var(--text-primary);
+}
+
+.help-body strong {
+	color: var(--text-primary);
+}
+
 /* Progress bar */
 .progress-bar {
 	height: 3px;

@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { app } from '$lib/state/app.svelte';
+	import { help } from '$lib/state/help.svelte';
 	import { MODE_LABELS } from '$lib/resolvers';
 	import type { ResolverMode } from '$lib/types';
+	import HelpBadge from './HelpBadge.svelte';
 
 	let dropdownOpen = $state(false);
 
@@ -94,6 +96,7 @@
 					<span class="sm:hidden">{SHORT_LABELS[app.resolverMode]} ▾</span>
 					<span class="hidden sm:inline">{MODE_LABELS[app.resolverMode]} ▾</span>
 				</button>
+				<HelpBadge topic="resolver-modes" />
 
 				{#if dropdownOpen}
 					<div
@@ -118,7 +121,7 @@
 							<div class="px-3 py-2 text-xs border-t" style="border-color: var(--border); background: var(--bg-tertiary);">
 								<span style="color: var(--accent);">Run:</span>
 								<code class="select-all ml-1" style="color: var(--text-primary);">npx findurlink</code>
-								<div class="mt-0.5" style="color: var(--text-muted);">Requires dig + whois</div>
+								<div class="mt-0.5 flex items-center gap-1" style="color: var(--text-muted);">Requires dig + whois <HelpBadge topic="local-api" /></div>
 							</div>
 						{/if}
 
@@ -168,6 +171,7 @@
 					style="background: var(--accent); color: var(--bg-primary); font-size: 0.6rem; line-height: 1;"
 				>{app.monitorEntries.length}</span>
 			</button>
+			<HelpBadge topic="monitor" />
 		{/if}
 
 		<!-- Saved domains button -->
@@ -193,6 +197,15 @@
 				>{app.savedCount}</span>
 			{/if}
 		</button>
+		<HelpBadge topic="save-bookmark" />
+
+		<!-- Tutorial help toggle -->
+		<button
+			onclick={() => help.toggle()}
+			class="p-1.5 rounded-lg transition-colors cursor-pointer border-0 sm:p-2 font-bold"
+			style="background: {help.tutorialMode ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {help.tutorialMode ? 'var(--accent)' : 'var(--text-secondary)'}; {help.tutorialMode ? 'border: 1px solid var(--accent);' : ''}"
+			title="Toggle tutorial help"
+		>?</button>
 
 		<button
 			onclick={() => app.toggleTheme()}

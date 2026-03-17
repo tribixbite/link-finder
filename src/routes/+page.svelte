@@ -16,6 +16,7 @@
 	import BulkActionBar from '$lib/components/BulkActionBar.svelte';
 	import MonitorPanel from '$lib/components/MonitorPanel.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import HelpModal from '$lib/components/HelpModal.svelte';
 
 	const INITIAL_BATCH = 60;
 	const LOAD_MORE = 80;
@@ -249,4 +250,7 @@
 
 	<!-- Toast notifications -->
 	<Toast />
+
+	<!-- Tutorial help modal -->
+	<HelpModal />
 </div>

@@ -5,6 +5,7 @@
 	import type { MutationType } from '$lib/types';
 	import SearchHistory from './SearchHistory.svelte';
 	import CustomMutationEditor from './CustomMutationEditor.svelte';
+	import HelpBadge from './HelpBadge.svelte';
 
 	const allMutations = Object.keys(MUTATION_INFO) as MutationType[];
 
@@ -78,6 +79,7 @@
 			<span class="text-xs font-normal" style="color: var(--text-muted);">
 				(comma or newline separated)
 			</span>
+			<HelpBadge topic="search" />
 		</label>
 		<textarea
 			id="search-terms"
@@ -99,6 +101,7 @@
 				<span class="text-xs font-normal" style="color: var(--text-muted);">
 					({app.selectedTlds.size}/{TLDS.length})
 				</span>
+				<HelpBadge topic="tlds" />
 			</span>
 			<div class="flex gap-1">
 				<button
@@ -183,7 +186,7 @@
 	<!-- Mutation selector -->
 	<div>
 		<div class="flex items-center justify-between mb-1.5">
-			<span class="text-sm font-medium" style="color: var(--text-secondary);">Mutations</span>
+			<span class="text-sm font-medium" style="color: var(--text-secondary);">Mutations <HelpBadge topic="mutations" /></span>
 			<div class="flex gap-1">
 				<button
 					onclick={() => { app.selectedMutations = new Set(allMutations); app.persist(); }}
