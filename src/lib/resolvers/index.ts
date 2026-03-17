@@ -47,17 +47,26 @@ export function getApiBaseUrl(): string {
  * Probe localhost ports for a running findurlink server.
  * Checks last-known port first, then scans candidates.
  * Also probes same-origin /api for Vite dev proxy.
+ *
+ * @param force — if true, scan all ports even without a saved port.
+ *   When false (default during auto-detect), only probes localhost if
+ *   a previously-used port is saved, avoiding the browser's Private
+ *   Network Access permission prompt on first visit.
  */
-async function probeLocalApi(): Promise<boolean> {
-	// Try same-origin first (Vite dev proxy)
+async function probeLocalApi(force = false): Promise<boolean> {
+	// Try same-origin first (Vite dev proxy) — no cross-origin, no permission prompt
 	if (await probe('/api/health', API_PROBE_TIMEOUT)) {
 		_apiBaseUrl = '/api';
 		return true;
 	}
 
-	// Try last-known port first for faster reconnect
+	// Check if we have a previously-used port saved
 	let lastPort: number | null = null;
 	try { lastPort = parseInt(localStorage.getItem(LS_API_PORT) ?? '', 10) || null; } catch {}
+
+	// Without a saved port and not forced, skip localhost scan to avoid
+	// the "wants to access other apps and services" browser permission prompt
+	if (!lastPort && !force) return false;
 
 	const ports = lastPort
 		? [lastPort, ...API_PROBE_PORTS.filter(p => p !== lastPort)]
@@ -95,8 +104,8 @@ export async function detectMode(): Promise<ResolverMode> {
 	try {
 		const forced = localStorage.getItem(LS_MODE_OVERRIDE) as ResolverMode | null;
 		if (forced && ['local-api', 'edge-worker', 'browser-doh'].includes(forced)) {
-			// Still need to discover the API URL if forcing local-api
-			if (forced === 'local-api') await probeLocalApi();
+			// User explicitly chose local-api — force full port scan
+			if (forced === 'local-api') await probeLocalApi(true);
 			return forced;
 		}
 	} catch { /* localStorage unavailable */ }
