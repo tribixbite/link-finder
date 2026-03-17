@@ -27,6 +27,8 @@
 		return 'auto';
 	})());
 
+	let isLocal = $derived(app.resolverMode === 'local-api');
+
 	let workerUrl = $state((() => {
 		try { return localStorage.getItem('findur-worker-url') || ''; }
 		catch { return ''; }
@@ -86,7 +88,7 @@
 				<button
 					onclick={(e) => { e.stopPropagation(); dropdownOpen = !dropdownOpen; }}
 					class="text-xs px-1.5 py-0.5 rounded-full cursor-pointer border transition-colors whitespace-nowrap sm:px-2"
-					style="background: {dropdownOpen ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {dropdownOpen ? 'var(--accent)' : 'var(--text-muted)'}; border-color: {dropdownOpen ? 'var(--accent)' : 'var(--border)'};"
+					style="background: {dropdownOpen ? 'var(--accent-muted)' : isLocal ? 'color-mix(in srgb, var(--available) 15%, transparent)' : 'var(--bg-tertiary)'}; color: {dropdownOpen ? 'var(--accent)' : isLocal ? 'var(--available)' : 'var(--text-muted)'}; border-color: {dropdownOpen ? 'var(--accent)' : isLocal ? 'var(--available)' : 'var(--border)'};"
 					title="Change DNS resolver mode"
 				>
 					<span class="sm:hidden">{SHORT_LABELS[app.resolverMode]} ▾</span>
