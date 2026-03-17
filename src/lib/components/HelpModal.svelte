@@ -68,13 +68,16 @@
 		aria-labelledby="help-modal-title"
 		tabindex="-1"
 	>
-		<div class="absolute inset-0 bg-black/50"></div>
+		<div class="absolute inset-0 bg-black/50 pointer-events-none"></div>
 
-		<!-- Modal -->
+		<!-- Modal — stop clicks from bubbling to backdrop -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
 			bind:this={modalRef}
 			class="relative w-full max-w-lg rounded-xl shadow-2xl overflow-hidden"
 			style="background: var(--bg-secondary); border: 1px solid var(--border);"
+			onclick={(e: MouseEvent) => e.stopPropagation()}
 		>
 			<!-- Header -->
 			<div
