@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { app } from '$lib/state/app.svelte';
+	import { help } from '$lib/state/help.svelte';
 	import { encodeSearchParams, decodeSearchParams } from '$lib/utils';
 	import type { MutationType } from '$lib/types';
 	import Header from '$lib/components/Header.svelte';
@@ -99,6 +100,10 @@
 			if (urlState.sort) app.sort = urlState.sort;
 			if (urlState.status) app.setStatusFilter(urlState.status);
 		}
+
+		// Deep-link help topic: ?help=local-api opens that topic's modal
+		const helpParam = new URLSearchParams(window.location.search).get('help');
+		if (helpParam) help.showFromUrl(helpParam);
 
 		// Enable URL sync after a microtask to ensure all URL-derived state has settled
 		queueMicrotask(() => { _urlInitialized = true; });

@@ -200,12 +200,24 @@
 		<HelpBadge topic="save-bookmark" />
 
 		<!-- Tutorial help toggle -->
-		<button
-			onclick={() => help.toggle()}
-			class="p-1.5 rounded-lg transition-colors cursor-pointer border-0 sm:p-2 font-bold"
-			style="background: {help.tutorialMode ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {help.tutorialMode ? 'var(--accent)' : 'var(--text-secondary)'}; {help.tutorialMode ? 'border: 1px solid var(--accent);' : ''}"
-			title="Toggle tutorial help"
-		>?</button>
+		<div class="relative">
+			<button
+				onclick={() => help.toggle()}
+				class="p-1.5 rounded-lg transition-colors cursor-pointer border-0 sm:p-2 font-bold"
+				style="background: {help.tutorialMode ? 'var(--accent-muted)' : 'var(--bg-tertiary)'}; color: {help.tutorialMode ? 'var(--accent)' : 'var(--text-secondary)'}; {help.tutorialMode ? 'border: 1px solid var(--accent);' : ''}"
+				title="Toggle tutorial help"
+			>?</button>
+
+			<!-- First-visit onboarding hint -->
+			{#if !help.onboardingSeen && !help.tutorialMode}
+				<div
+					class="absolute -bottom-9 right-0 whitespace-nowrap px-2 py-1 rounded-md text-xs animate-pulse"
+					style="background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent);"
+				>
+					Tap <strong>?</strong> for a tour
+				</div>
+			{/if}
+		</div>
 
 		<button
 			onclick={() => app.toggleTheme()}

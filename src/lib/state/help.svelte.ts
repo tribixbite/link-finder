@@ -163,17 +163,29 @@ export const HELP_CONTENT: Record<HelpTopic, HelpEntry> = {
 	},
 };
 
+/** All valid topic keys for URL param validation */
+export const HELP_TOPICS = Object.keys(HELP_CONTENT) as HelpTopic[];
+
+/** Key for the one-time onboarding hint dismissal */
+const ONBOARDING_KEY = 'findur-help-seen';
+
 /** Reactive help state — session-only, not persisted to localStorage */
 class HelpState {
 	/** Whether tutorial badges are visible */
 	tutorialMode = $state(false);
 	/** Currently open topic (null = modal closed) */
 	activeTopic = $state<HelpTopic | null>(null);
+	/** Whether the onboarding hint has been dismissed */
+	onboardingSeen = $state((() => {
+		try { return localStorage.getItem(ONBOARDING_KEY) === '1'; }
+		catch { return false; }
+	})());
 
 	/** Toggle tutorial mode on/off */
 	toggle() {
 		this.tutorialMode = !this.tutorialMode;
 		if (!this.tutorialMode) this.activeTopic = null;
+		this.dismissOnboarding();
 	}
 
 	/** Open the modal for a specific topic */
@@ -184,6 +196,24 @@ class HelpState {
 	/** Close the modal */
 	close() {
 		this.activeTopic = null;
+	}
+
+	/** Open a topic from a URL param — activates tutorial mode too */
+	showFromUrl(topic: string) {
+		if ((HELP_TOPICS as string[]).includes(topic)) {
+			this.tutorialMode = true;
+			this.activeTopic = topic as HelpTopic;
+			this.dismissOnboarding();
+		}
+	}
+
+	/** Mark onboarding hint as seen */
+	dismissOnboarding() {
+		if (!this.onboardingSeen) {
+			this.onboardingSeen = true;
+			try { localStorage.setItem(ONBOARDING_KEY, '1'); }
+			catch { /* localStorage unavailable */ }
+		}
 	}
 }
 
